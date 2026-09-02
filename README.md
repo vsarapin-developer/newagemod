@@ -4,8 +4,8 @@
 
 ## Установка
 
-1. Поставить [BepInEx 5.4.23.5 x64](https://github.com/BepInEx/BepInEx/releases) в папку игры и один раз запустить игру, чтобы он создал структуру каталогов.
-2. Положить `NewAgeQoL.dll` в `New Age\BepInEx\plugins\`.
+1. Распаковать [BepInEx 5.4.23.5 x64](https://github.com/BepInEx/BepInEx/releases) в папку игры — туда, где лежит `NewAgeClient.exe`.
+2. Положить `NewAgeQoL.dll` в `New Age\BepInEx\plugins\`. Если папки `plugins` нет, создать её.
 3. Запустить игру.
 
 Настройки — кнопка «Настройки мода» в игровых настройках, под «Сбросить положение чата». Там же всё выключается по отдельности. Файл настроек — `BepInEx\config\newage.qol.cfg`.

@@ -7,12 +7,10 @@ New Age QoL — плагин для «Новой Эры» (nura.biz)
    https://github.com/BepInEx/BepInEx/releases
    Распаковать в папку игры — туда, где лежит NewAgeClient.exe.
 
-2. Запустить игру один раз и закрыть. BepInEx создаст папки
-   BepInEx\plugins и BepInEx\config.
+2. Положить NewAgeQoL.dll в папку New Age\BepInEx\plugins\
+   Если папки plugins нет — создать её.
 
-3. Положить NewAgeQoL.dll в папку New Age\BepInEx\plugins\
-
-4. Запустить игру.
+3. Запустить игру.
 
 Обновление: просто заменить NewAgeQoL.dll новым. Настройки не сбросятся.
 Удаление: удалить NewAgeQoL.dll. Настройки останутся в
