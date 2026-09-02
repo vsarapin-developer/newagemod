@@ -1,0 +1,420 @@
+using System;
+using System.Collections.Generic;
+using BepInEx.Configuration;
+using HarmonyLib;
+using UnityEngine;
+using UnityEngine.UI;
+
+namespace NewAgeQoL
+{
+    internal static class Settings
+    {
+        private static GameObject _win;
+        private static readonly List<Action> _refresh = new List<Action>();
+        private static readonly List<Action> _reset = new List<Action>();
+
+        private static readonly List<Action> _undo = new List<Action>();
+
+        internal static bool IsOpen => _win != null;
+
+        private abstract class RowDef { internal string Title; }
+
+        private sealed class Header : RowDef { }
+
+        private sealed class BoolRow : RowDef { internal ConfigEntry<bool> Cfg; }
+
+        private sealed class KeyRow : RowDef { internal ConfigEntry<string> Cfg; }
+
+        private sealed class ValueRow : RowDef
+        {
+            internal Func<string> Get;
+            internal Action<string> Set;
+            internal Action Reset;
+            internal Action Remember;
+        }
+
+        private static List<RowDef> Rows()
+        {
+            var rows = new List<RowDef>
+            {
+                new Header { Title = "Кнопки" },
+                B("Кнопка возврата в Иллениум", Plugin.CfgTownButton),
+                B("Кнопка артефактов", Plugin.CfgArtifactButtons),
+
+                new Header { Title = "Инвентарь" },
+                B("Иконка вещи у рецепта", Plugin.CfgRecipeIcons),
+                B("Вкладка «Контракты»", Plugin.CfgContractsTab),
+                B("Поиск в сумке", Plugin.CfgSearch),
+                B("Свои строки в логе зелёным", Plugin.CfgChatHighlight),
+            };
+            rows.RemoveAll(r => r == null);
+            return rows;
+        }
+
+        private static RowDef K(string title, ConfigEntry<string> cfg) =>
+            cfg == null ? null : new KeyRow { Title = title, Cfg = cfg };
+
+        private static RowDef Btn(string title, ConfigEntry<string> byName, ConfigEntry<int> byId)
+        {
+            if (byName == null || byId == null) return null;
+            return new ValueRow
+            {
+                Title = title,
+                Get = () => !string.IsNullOrEmpty(byName.Value) ? byName.Value
+                          : byId.Value > 0 ? byId.Value.ToString() : "",
+                Set = v =>
+                {
+                    v = (v ?? "").Trim();
+                    if (int.TryParse(v, out int n)) { byId.Value = n; byName.Value = ""; }
+                    else byName.Value = v;
+                },
+                Remember = () => { Remember(byName); Remember(byId); },
+                Reset = () => { byName.Value = (string)byName.DefaultValue; byId.Value = (int)byId.DefaultValue; },
+            };
+        }
+
+        private static RowDef B(string title, ConfigEntry<bool> cfg) =>
+            cfg == null ? null : new BoolRow { Title = title, Cfg = cfg };
+
+        private static RowDef I(string title, ConfigEntry<int> cfg) =>
+            cfg == null ? null : new ValueRow
+            {
+                Title = title,
+                Get = () => cfg.Value.ToString(),
+                Set = v => { if (int.TryParse(v.Trim(), out int n)) cfg.Value = n; },
+                Remember = () => Remember(cfg),
+                Reset = () => cfg.Value = (int)cfg.DefaultValue,
+            };
+
+        private static RowDef F(string title, ConfigEntry<float> cfg) =>
+            cfg == null ? null : new ValueRow
+            {
+                Title = title,
+                Get = () => cfg.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Set = v =>
+                {
+                    if (float.TryParse(v.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Float,
+                                       System.Globalization.CultureInfo.InvariantCulture, out float n)) cfg.Value = n;
+                },
+                Remember = () => Remember(cfg),
+                Reset = () => cfg.Value = (float)cfg.DefaultValue,
+            };
+
+        private static RowDef S(string title, ConfigEntry<string> cfg) =>
+            cfg == null ? null : new ValueRow
+            {
+                Title = title,
+                Get = () => cfg.Value ?? "",
+                Set = v => cfg.Value = v,
+                Remember = () => Remember(cfg),
+                Reset = () => cfg.Value = (string)cfg.DefaultValue,
+            };
+
+        internal static void Toggle()
+        {
+            if (_win != null) { Close(); return; }
+            try { Open(); }
+            catch (Exception e) { Plugin.Log?.LogError("[settings] окно не открылось: " + e); Close(); }
+        }
+
+        internal static void Close() => Close(revert: false);
+
+        internal static void Close(bool revert)
+        {
+            if (revert) foreach (var u in _undo) { try { u(); } catch { } }
+            if (_win != null) UnityEngine.Object.Destroy(_win);
+            _win = null;
+            _refresh.Clear();
+            _reset.Clear();
+            _undo.Clear();
+            _captureCfg = null;
+            _captureText = null;
+        }
+
+        private static void Remember<T>(ConfigEntry<T> cfg)
+        {
+            if (cfg == null) return;
+            T old = cfg.Value;
+            _undo.Add(() => cfg.Value = old);
+        }
+
+        private static void Open()
+        {
+            var prefab = VisualPrefabsHolder.Instance != null ? VisualPrefabsHolder.Instance.HotkeytsDialog : null;
+            if (prefab == null) { Plugin.Log?.LogWarning("[settings] окно горячих клавиш не найдено."); return; }
+
+            _win = UnityEngine.Object.Instantiate(prefab);
+            var dlg = _win.GetComponent<HotkeysDialog>();
+            if (dlg == null) { Plugin.Log?.LogWarning("[settings] в окне нет HotkeysDialog."); Close(); return; }
+
+            dlg.ShowDialog(null, ECanvasType.ModalWindow);
+
+            var caption = Field<Text>(dlg, "CaptionText");
+            var okButton = Field<Button>(dlg, "OkButton");
+            var resetButton = Field<Button>(dlg, "ResetToDefaultButton");
+            var resetText = Field<Text>(dlg, "ResetToDefaultButtonText");
+            var manager = Field<MonoBehaviour>(dlg, "widgetManager");
+            if (manager == null) { Plugin.Log?.LogWarning("[settings] не нашёл список строк окна."); Close(); return; }
+
+            var rowPrefab = Field<GameObject>(manager, "WidgetPrefab");
+            var container = manager.transform;
+            if (rowPrefab == null) { Plugin.Log?.LogWarning("[settings] не нашёл шаблон строки."); Close(); return; }
+
+            manager.enabled = false;
+            for (int i = container.childCount - 1; i >= 0; i--)
+                UnityEngine.Object.Destroy(container.GetChild(i).gameObject);
+
+            if (caption != null) caption.text = "Настройки мода";
+
+            if (okButton != null)
+            {
+                okButton.onClick.RemoveAllListeners();
+                okButton.onClick.AddListener(() => Close(revert: false));
+            }
+            if (resetButton != null) resetButton.gameObject.SetActive(false);
+            if (dlg.CloseButton != null)
+            {
+                dlg.CloseButton.onClick.RemoveAllListeners();
+                dlg.CloseButton.onClick.AddListener(() => Close(revert: true));
+            }
+
+            _refresh.Clear();
+            _reset.Clear();
+            _undo.Clear();
+            foreach (var row in Rows())
+            {
+                try { AddRow(rowPrefab, container, row); }
+                catch (Exception e) { Plugin.Log?.LogError("[settings] строка «" + (row.Title ?? "?") + "»: " + e); }
+            }
+
+            var scroll = Field<ScrollRect>(manager, "ParentScrollRect");
+            ScrollTop(scroll);
+            if (Plugin.Instance != null) Plugin.Instance.StartCoroutine(ScrollTopNextFrame(scroll));
+        }
+
+        private static void AddRow(GameObject rowPrefab, Transform container, RowDef def)
+        {
+            var go = UnityEngine.Object.Instantiate(rowPrefab, container, worldPositionStays: false);
+            go.name = "MvlRow";
+            var widget = go.GetComponent<HotkeyWidget>();
+
+            Text label = null, value = null;
+            Image background = null;
+            Button button = null;
+            if (widget != null)
+            {
+                label = Field<Text>(widget, "LabelText");
+                value = Field<Text>(widget, "KeyText");
+                background = Field<Image>(widget, "KeyBackground");
+                button = Field<Button>(widget, "Button");
+                UnityEngine.Object.Destroy(widget);
+            }
+            if (label == null) label = go.GetComponentInChildren<Text>(true);
+            if (label != null) label.text = def.Title;
+
+            if (def is Header)
+            {
+                if (background != null) background.gameObject.SetActive(false);
+                else if (value != null) value.gameObject.SetActive(false);
+                if (label != null)
+                {
+                    label.text = def.Title.ToUpperInvariant();
+                    label.fontStyle = FontStyle.Bold;
+                    label.fontSize = Mathf.RoundToInt(label.fontSize * 1.25f);
+                    label.alignment = TextAnchor.MiddleCenter;
+                    label.color = new Color(0.45f, 0.12f, 0.06f);
+                    var rt = label.rectTransform;
+                    rt.anchorMin = new Vector2(0f, rt.anchorMin.y);
+                    rt.anchorMax = new Vector2(1f, rt.anchorMax.y);
+                    rt.offsetMin = new Vector2(6f, rt.offsetMin.y);
+                    rt.offsetMax = new Vector2(-6f, rt.offsetMax.y);
+                }
+                return;
+            }
+
+            if (def is KeyRow keyRow)
+            {
+                Remember(keyRow.Cfg);
+                ShowKey(value, keyRow.Cfg.Value);
+                if (button != null)
+                {
+                    button.onClick.RemoveAllListeners();
+                    button.onClick.AddListener(() =>
+                    {
+                        _captureCfg = keyRow.Cfg;
+                        _captureText = value;
+                        if (value != null) { value.text = "жми клавишу…"; value.color = new Color(0.05f, 0.25f, 0.55f); }
+                    });
+                }
+                _refresh.Add(() => ShowKey(value, keyRow.Cfg.Value));
+                _reset.Add(() => keyRow.Cfg.Value = (string)keyRow.Cfg.DefaultValue);
+                return;
+            }
+
+            if (def is BoolRow b)
+            {
+                Remember(b.Cfg);
+                SetSwitch(value, b.Cfg.Value);
+                if (button != null)
+                {
+                    button.onClick.RemoveAllListeners();
+                    button.onClick.AddListener(() =>
+                    {
+                        b.Cfg.Value = !b.Cfg.Value;
+                        SetSwitch(value, b.Cfg.Value);
+                    });
+                }
+                _refresh.Add(() => SetSwitch(value, b.Cfg.Value));
+                _reset.Add(() => b.Cfg.Value = (bool)b.Cfg.DefaultValue);
+                return;
+            }
+
+            var row = (ValueRow)def;
+            if (row.Remember != null) row.Remember();
+            if (value != null) value.text = row.Get();
+            _refresh.Add(() => { if (value != null) value.text = row.Get(); });
+            if (row.Reset != null) _reset.Add(row.Reset);
+
+            if (background == null || value == null) return;
+            if (button != null) UnityEngine.Object.DestroyImmediate(button);
+
+            var input = background.gameObject.AddComponent<InputField>();
+            input.targetGraphic = background;
+            input.textComponent = value;
+            input.lineType = InputField.LineType.SingleLine;
+            value.text = row.Get();
+            input.SetTextWithoutNotify(row.Get());
+            input.onEndEdit.AddListener(v =>
+            {
+                row.Set(v);
+                string now = row.Get();
+                input.SetTextWithoutNotify(now);
+                value.text = now;
+            });
+        }
+
+        private static ConfigEntry<string> _captureCfg;
+        private static Text _captureText;
+
+        internal static void Tick()
+        {
+            if (_captureCfg == null) return;
+            if (_win == null) { _captureCfg = null; _captureText = null; return; }
+            if (!Input.anyKeyDown) return;
+
+            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Backspace) || Input.GetKeyDown(KeyCode.Delete))
+            {
+                if (Input.GetKeyDown(KeyCode.Backspace) || Input.GetKeyDown(KeyCode.Delete)) _captureCfg.Value = "";
+                Finish();
+                return;
+            }
+
+            foreach (KeyCode code in Enum.GetValues(typeof(KeyCode)))
+            {
+                if (!Input.GetKeyDown(code) || IsModifier(code) || IsMouse(code)) continue;
+                string combo = "";
+                if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) combo += "Ctrl+";
+                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) combo += "Alt+";
+                if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) combo += "Shift+";
+                _captureCfg.Value = combo + KeyName(code);
+                Finish();
+                return;
+            }
+        }
+
+        private static void Finish()
+        {
+            ShowKey(_captureText, _captureCfg.Value);
+            _captureCfg = null;
+            _captureText = null;
+        }
+
+        private static bool IsModifier(KeyCode c) =>
+            c == KeyCode.LeftControl || c == KeyCode.RightControl || c == KeyCode.LeftAlt || c == KeyCode.RightAlt
+            || c == KeyCode.LeftShift || c == KeyCode.RightShift || c == KeyCode.LeftCommand || c == KeyCode.RightCommand
+            || c == KeyCode.LeftWindows || c == KeyCode.RightWindows || c == KeyCode.AltGr;
+
+        private static bool IsMouse(KeyCode c) => c >= KeyCode.Mouse0 && c <= KeyCode.Mouse6;
+
+        private static string KeyName(KeyCode c)
+        {
+            if (c >= KeyCode.Alpha0 && c <= KeyCode.Alpha9) return ((int)(c - KeyCode.Alpha0)).ToString();
+            if (c >= KeyCode.Keypad0 && c <= KeyCode.Keypad9) return ((int)(c - KeyCode.Keypad0)).ToString();
+            return c.ToString();
+        }
+
+        private static void ShowKey(Text value, string spec)
+        {
+            if (value == null) return;
+            value.text = string.IsNullOrEmpty(spec) ? "—" : spec;
+            value.color = Color.black;
+        }
+
+        private static void ScrollTop(ScrollRect scroll)
+        {
+            if (scroll == null) return;
+            try
+            {
+                Canvas.ForceUpdateCanvases();
+                scroll.StopMovement();
+                scroll.verticalNormalizedPosition = 1f;
+                Canvas.ForceUpdateCanvases();
+            }
+            catch { }
+        }
+
+        private static System.Collections.IEnumerator ScrollTopNextFrame(ScrollRect scroll)
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                yield return null;
+                if (scroll == null) yield break;
+                var content = scroll.content;
+                if (content != null) LayoutRebuilder.ForceRebuildLayoutImmediate(content);
+                ScrollTop(scroll);
+            }
+        }
+
+        private static void SetSwitch(Text value, bool on)
+        {
+            if (value == null) return;
+            value.text = on ? "ВКЛ" : "ВЫКЛ";
+            value.color = on ? new Color(0.05f, 0.42f, 0.08f) : new Color(0.62f, 0.08f, 0.06f);
+        }
+
+        private static T Field<T>(object obj, string name) where T : class
+        {
+            try { return AccessTools.Field(obj.GetType(), name)?.GetValue(obj) as T; }
+            catch { return null; }
+        }
+    }
+
+    [HarmonyPatch(typeof(SetupDialog), "Start")]
+    public static class ModSettingsButtonPatch
+    {
+        private static void Postfix(SetupDialog __instance)
+        {
+            try
+            {
+                var reset = AccessTools.Field(typeof(SetupDialog), "ResetChatButton")?.GetValue(__instance) as Button;
+                if (reset == null) { Plugin.Log?.LogWarning("[settings] кнопку «Сбросить положение чата» не нашёл."); return; }
+
+                var src = (RectTransform)reset.transform;
+                var go = UnityEngine.Object.Instantiate(reset.gameObject, src.parent);
+                go.name = "MvlSettingsButton";
+                var rt = (RectTransform)go.transform;
+                rt.anchorMin = src.anchorMin; rt.anchorMax = src.anchorMax; rt.pivot = src.pivot;
+                rt.sizeDelta = src.sizeDelta;
+                rt.localScale = src.localScale;
+                rt.anchoredPosition = src.anchoredPosition - new Vector2(0f, src.rect.height + 10f);
+
+                foreach (var t in go.GetComponentsInChildren<Text>(true)) t.text = "Настройки мода";
+
+                var btn = go.GetComponent<Button>();
+                btn.onClick.RemoveAllListeners();
+                btn.onClick.AddListener(() => Settings.Toggle());
+            }
+            catch (Exception e) { Plugin.Log?.LogError("[settings] кнопка не добавлена: " + e.Message); }
+        }
+    }
+}
