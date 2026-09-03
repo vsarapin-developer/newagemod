@@ -19,7 +19,7 @@ namespace NewAgeQoL
             {
                 if (__instance == null)
                 {
-                    Plugin.Log?.LogInfo("[dialog] цена пришла в закрытое окно докупки — пропускаю");
+                    Plugin.Trace("[dialog] цена пришла в закрытое окно докупки — пропускаю");
                     return false;
                 }
 
@@ -33,7 +33,7 @@ namespace NewAgeQoL
                 var button = _okButton.GetValue(__instance) as UnityEngine.Object;
                 if (button == null)
                 {
-                    Plugin.Log?.LogInfo("[dialog] кнопка окна докупки уже уничтожена — пропускаю обновление цены");
+                    Plugin.Trace("[dialog] кнопка окна докупки уже уничтожена — пропускаю обновление цены");
                     return false;
                 }
                 return true;

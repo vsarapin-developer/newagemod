@@ -324,7 +324,7 @@ namespace NewAgeQoL
                 if (Plugin.CfgContractsIconImage == null || string.IsNullOrEmpty(t?.Image)) return;
                 if (!string.IsNullOrEmpty(Plugin.CfgContractsIconImage.Value)) return;
                 Plugin.CfgContractsIconImage.Value = t.Image;
-                Plugin.Log?.LogDebug("[contracts] картинка вкладки: «" + t.Image + "» (по контракту " + t.ThingId + " «" + t.Name + "»)");
+                Plugin.Trace("[contracts] картинка вкладки: «" + t.Image + "» (по контракту " + t.ThingId + " «" + t.Name + "»)");
             }
             catch { }
         }

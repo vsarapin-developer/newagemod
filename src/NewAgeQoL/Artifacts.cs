@@ -142,7 +142,7 @@ namespace NewAgeQoL
 
                 Say("смотрю хранилище");
                 yield return Plugin.Instance.StartCoroutine(Scan(WinByLocation, 381));
-                Plugin.Log?.LogDebug("[art] в хранилище видно " + Scanned.Count + ": "
+                Plugin.Trace("[art] в хранилище видно " + Scanned.Count + ": "
                                     + string.Join(", ", Scanned.Select(i => i.ThingId + "/стак" + i.Inv + "/вкл" + i.Tab + "/шт" + i.Qty).ToArray()));
 
                 var need = new Dictionary<int, int>();
@@ -309,7 +309,7 @@ namespace NewAgeQoL
                 if (found == 0 && (Has(n, "safe") || Has(n, "storage") || Has(n, "vault") || Has(n, "box") || Has(n, "хран")))
                     found = so.Id;
             }
-            Plugin.Log?.LogDebug("[art] двери локации " + Loc() + ": " + sb + "-> хранилище: " + (found > 0 ? found.ToString() : "не найдено"));
+            Plugin.Trace("[art] двери локации " + Loc() + ": " + sb + "-> хранилище: " + (found > 0 ? found.ToString() : "не найдено"));
             return found;
         }
 
@@ -366,7 +366,7 @@ namespace NewAgeQoL
             lock (Ctx)
             {
                 if (Ctx.TryGetValue(inv, out var r))
-                    Plugin.Log?.LogDebug("[art] кнопка " + button + " стак " + inv + " окно " + window + " вкладка " + tab
+                    Plugin.Trace("[art] кнопка " + button + " стак " + inv + " окно " + window + " вкладка " + tab
                                         + " -> " + (r.Ok ? "ок" : "отказ: " + r.Err));
                 else
                     Plugin.Log?.LogWarning("[art] кнопка " + button + " стак " + inv + " окно " + window + " вкладка " + tab
@@ -465,7 +465,7 @@ namespace NewAgeQoL
         {
             var parts = slots.Select(x => x.ThingId + ";" + x.SlotId).ToArray();
             Saved = string.Join(",", parts);
-            Plugin.Log?.LogDebug("[art] запомнил " + parts.Length + ": " + Saved);
+            Plugin.Trace("[art] запомнил " + parts.Length + ": " + Saved);
         }
 
         private static List<Slot> Recall()
@@ -515,7 +515,7 @@ namespace NewAgeQoL
         {
             Status = text;
             StatusAt = Time.unscaledTime;
-            Plugin.Log?.LogInfo("[art] " + text + " (loc=" + Loc() + ")");
+            Plugin.Trace("[art] " + text + " (loc=" + Loc() + ")");
             try { AirMessageScript.ShowInformationNotification("Артефакты: " + text); } catch { }
         }
 

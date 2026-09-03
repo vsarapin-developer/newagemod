@@ -10,7 +10,7 @@ namespace NewAgeQoL
             if (!Artifacts.Busy || Artifacts.Internal) return true;
             if (!Blocked(request)) return true;
 
-            Plugin.Log?.LogDebug("[art] не пускаю " + request.GetType().Name + ", идёт работа с хранилищем");
+            Plugin.Trace("[art] не пускаю " + request.GetType().Name + ", идёт работа с хранилищем");
             Refuse();
             return false;
         }
@@ -40,7 +40,7 @@ namespace NewAgeQoL
             if (!__result) return;
             if (!Artifacts.Busy || Artifacts.Internal) return;
             __result = false;
-            Plugin.Log?.LogDebug("[art] не пускаю смену локации, идёт работа с хранилищем");
+            Plugin.Trace("[art] не пускаю смену локации, идёт работа с хранилищем");
             TravelLockPatch.Refuse();
         }
     }

@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.0.0")]
+    [BepInPlugin(Guid, "New Age QoL", "1.1.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -36,6 +36,7 @@ namespace NewAgeQoL
         internal static ConfigEntry<string> CfgFlaskMushroomName;
         internal static ConfigEntry<bool> CfgItemIds;
         internal static ConfigEntry<bool> CfgInstantRestore;
+        internal static ConfigEntry<bool> CfgVerbose;
 
         private void Awake()
         {
@@ -98,6 +99,9 @@ namespace NewAgeQoL
             CfgItemIds = Config.Bind("Inventory", "ShowThingIds", true,
                 "У вещей, используемых ВНЕ боя (зелья, прочие внебоевые расходники, руны), дописывать к названию id в скобках: «Зелье здоровья (427)». Этот id вставляется в настройки банок. Боевые расходники, снаряжение и рецепты не трогаются, на рынке id не показывается.");
 
+            CfgVerbose = Config.Bind("Log", "Verbose", false,
+                "Писать в лог подробности работы: что нажато, что найдено в сумке, какие окна перестроены. По умолчанию ВЫКЛ — в логе остаются только ошибки и строчка о загрузке. Включай, если нужно показать, что происходит, при разборе проблемы.");
+
             try
             {
                 var harmony = new Harmony(Guid);
@@ -111,6 +115,12 @@ namespace NewAgeQoL
             catch (System.Exception e) { Log.LogError("Harmony: " + e); }
 
             Log.LogInfo("New Age QoL загружен.");
+        }
+
+        // Подробности пишем только по просьбе: в обычной игре лог не растёт.
+        internal static void Trace(string text)
+        {
+            if (CfgVerbose != null && CfgVerbose.Value) Log?.LogInfo(text);
         }
 
         private void Update()

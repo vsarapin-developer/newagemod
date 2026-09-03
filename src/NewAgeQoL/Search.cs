@@ -359,7 +359,7 @@ namespace NewAgeQoL
             _placeAt = 0f;
             Query = "";
             Place();
-            Plugin.Log?.LogDebug("[search] строка поиска добавлена, образец «"
+            Plugin.Trace("[search] строка поиска добавлена, образец «"
                                  + (template != null ? template.name : "свой") + "»");
         }
     }

@@ -66,7 +66,7 @@ namespace NewAgeQoL
                     default: indicators.CurrentStamina = now; break;
                 }
 
-                Plugin.Log?.LogInfo("[combat] " + animation + " +" + item.life + " сразу, без анимации: было "
+                Plugin.Trace("[combat] " + animation + " +" + item.life + " сразу, без анимации: было "
                                     + was + ", стало " + now + ", предел " + max
                                     + ", раунд " + Round() + ", очередь анимаций " + Queue());
             }

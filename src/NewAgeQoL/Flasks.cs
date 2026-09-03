@@ -729,7 +729,7 @@ namespace NewAgeQoL
             Status = text;
             StatusAt = Time.unscaledTime;
             StatusRow = row;
-            Plugin.Log?.LogInfo("[flasks] " + text);
+            Plugin.Trace("[flasks] " + text);
         }
 
         private static void Step(int row, string text)

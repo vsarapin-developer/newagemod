@@ -73,7 +73,6 @@ namespace NewAgeQoL
         }
 
         private static float _next;
-        private static float _complainAt;
 
         internal static void Tick()
         {
@@ -82,11 +81,6 @@ namespace NewAgeQoL
 
             bool world = InWorld() && !InCombat();
             var anchor = Bag();
-            if (world && anchor == null && Time.unscaledTime > _complainAt)
-            {
-                _complainAt = Time.unscaledTime + 5f;
-                Plugin.Log?.LogDebug("[buttons] кнопки сумки нет на экране, якорь не найден");
-            }
             bool ready = world && anchor != null && anchor.rect.height > 2f
                          && Root(anchor).rect.width > 2f;
 
@@ -553,7 +547,7 @@ namespace NewAgeQoL
 
                 entry.Go = go;
                 Layout();
-                Plugin.Log?.LogDebug("[buttons] " + entry.Name + (cell != null ? " из клетки" : " своя") + " сторона " + side
+                Plugin.Trace("[buttons] " + entry.Name + (cell != null ? " из клетки" : " своя") + " сторона " + side
                                     + ", рамка " + (frame != null && frame.sprite != null ? frame.sprite.name : "нет")
                                     + ", иконка " + (sprite != null ? sprite.name : "нет"));
             }
