@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using HarmonyLib;
 using Transport.Messages.Responses.Things.Thinginfo.Generalinfo;
 using Transport.Messages.Responses.Things.Thingtabs;
@@ -63,7 +64,23 @@ namespace NewAgeQoL
             var d = SwapHere() ? r.Data : null;
             bool on = d != null && IsRecipe((int)d.SubType);
             Mark(r, on, on ? d.Image : null);
-            if (!on) Shrink(r, false);
+            if (!on) { Shrink(r, false); return; }
+            Redraw(r);
+        }
+
+        private static MethodInfo _updateImage;
+
+        // Клетку с новым рецептом игра не перерисовывает: в её проверке сравнивается картинка предмета,
+        // а у всех рецептов она одна и та же (свиток). Нам это ломает подмену — в клетке остаётся
+        // результат прошлого рецепта, хотя данные уже новые. Поэтому перерисовываем сами.
+        private static void Redraw(InventoryThingItemRenderer r)
+        {
+            try
+            {
+                if (_updateImage == null) _updateImage = AccessTools.Method(typeof(InventoryThingItemRenderer), "UpdateImage");
+                _updateImage?.Invoke(r, null);
+            }
+            catch { }
         }
 
         private static readonly AccessTools.FieldRef<InventoryThingItemRenderer, Image> ThingImageRef =
@@ -146,7 +163,8 @@ namespace NewAgeQoL
 
         private static void RefreshCells(int recipeThingId)
         {
-            var update = AccessTools.Method(typeof(InventoryThingItemRenderer), "UpdateImage");
+            if (_updateImage == null) _updateImage = AccessTools.Method(typeof(InventoryThingItemRenderer), "UpdateImage");
+            var update = _updateImage;
             if (update == null) return;
             for (int i = Live.Count - 1; i >= 0; i--)
             {

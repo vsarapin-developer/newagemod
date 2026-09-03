@@ -14,11 +14,13 @@ namespace NewAgeQoL
             internal System.Func<string> Hint;
             internal GameObject Go;
             internal Image Icon;
+            internal Text Count;
             internal System.Func<bool> Enabled;
             internal System.Func<Sprite> Sprite;
+            internal System.Func<string> Badge;
             internal System.Action Click;
             internal System.Func<bool> Usable;
-            internal int Slot;
+            internal int Col;
         }
 
         private static readonly List<Entry> Buttons = new List<Entry>
@@ -26,7 +28,7 @@ namespace NewAgeQoL
             new Entry
             {
                 Name = "QoLTownButton",
-                Slot = 0,
+                Col = 0,
                 Hint = () => Artifacts.Busy ? "Идёт работа с хранилищем" : "Вернуться в Иллениум",
                 Usable = () => !Artifacts.Busy,
                 Enabled = () => Plugin.CfgTownButton == null || Plugin.CfgTownButton.Value,
@@ -36,7 +38,7 @@ namespace NewAgeQoL
             new Entry
             {
                 Name = "QoLArtifactButton",
-                Slot = 1,
+                Col = 0,
                 Hint = () => Artifacts.HasStash
                     ? "Забрать артефакты и надеть"
                     : "Сдать артефакты в хранилище",
@@ -50,6 +52,25 @@ namespace NewAgeQoL
                 },
             },
         };
+
+        static SideButtons()
+        {
+            for (int i = 0; i < Flasks.Rows; i++)
+            {
+                int row = i;
+                Buttons.Add(new Entry
+                {
+                    Name = "QoLFlaskButton" + row,
+                    Col = 1,
+                    Hint = () => Flasks.Hint(row),
+                    Badge = () => Flasks.Badge(row),
+                    Usable = () => !Flasks.Busy(row) && !Artifacts.Busy,
+                    Enabled = () => Flasks.Shown(row),
+                    Sprite = () => Flasks.Icon(row),
+                    Click = () => Flasks.Use(row),
+                });
+            }
+        }
 
         private static float _next;
         private static float _complainAt;
@@ -80,7 +101,12 @@ namespace NewAgeQoL
                 if (b.Go == null) Create(b);
                 if (b.Go == null) continue;
                 var sprite = b.Sprite();
-                if (b.Icon != null && sprite != null && b.Icon.sprite != sprite) b.Icon.sprite = sprite;
+                if (b.Icon != null)
+                {
+                    if (sprite != null && b.Icon.sprite != sprite) b.Icon.sprite = sprite;
+                    bool drawn = b.Icon.sprite != null && b.Icon.sprite.texture != null;
+                    if (b.Icon.enabled != drawn) b.Icon.enabled = drawn;
+                }
 
                 bool usable = b.Usable == null || b.Usable();
                 var btn = b.Go.GetComponent<Button>();
@@ -89,6 +115,11 @@ namespace NewAgeQoL
                 {
                     var tint = usable ? Color.white : new Color(0.45f, 0.45f, 0.45f, 0.65f);
                     if (b.Icon.color != tint) b.Icon.color = tint;
+                }
+                if (b.Count != null && b.Badge != null)
+                {
+                    string badge = b.Badge();
+                    if (b.Count.text != badge) b.Count.text = badge;
                 }
             }
             Layout();
@@ -110,7 +141,18 @@ namespace NewAgeQoL
             return (RectTransform)root.transform;
         }
 
+        private static RectTransform _bag;
+        private static float _bagAt = -1f;
+
         private static RectTransform Bag()
+        {
+            if (_bagAt == Time.unscaledTime) return _bag;
+            _bagAt = Time.unscaledTime;
+            _bag = FindBag();
+            return _bag;
+        }
+
+        private static RectTransform FindBag()
         {
             try
             {
@@ -134,6 +176,13 @@ namespace NewAgeQoL
             return local - parent.rect.center;
         }
 
+        private const int PerColumn = 2;
+
+        private static readonly int[] Counted = new int[4];
+        private static readonly int[] Placed = new int[4];
+        private static readonly int[] FirstColumn = new int[4];
+        private static float _sideAt;
+
         private static void Layout()
         {
             var bag = Bag();
@@ -145,12 +194,46 @@ namespace NewAgeQoL
             float lift = bag.rect.height * 0.6f + side * 0.7f + 10f;
             Vector2 baseAt = Base(bag, parent);
 
+            for (int i = 0; i < Counted.Length; i++) { Counted[i] = 0; Placed[i] = 0; }
             foreach (var b in Buttons)
             {
-                if (b.Go == null) continue;
-                var rt = (RectTransform)b.Go.transform;
-                rt.anchoredPosition = baseAt + new Vector2(0f, lift + step * b.Slot);
+                if (b.Go == null || !b.Enabled()) continue;
+                Counted[Group(b)]++;
             }
+            int next = 0;
+            for (int g = 0; g < Counted.Length; g++)
+            {
+                FirstColumn[g] = next;
+                next += (Counted[g] + PerColumn - 1) / PerColumn;
+            }
+
+            int last = 0;
+            foreach (var b in Buttons)
+            {
+                if (b.Go == null || !b.Enabled()) continue;
+                int group = Group(b);
+                int n = Placed[group]++;
+                int col = FirstColumn[group] + n / PerColumn;
+                int row = n % PerColumn;
+                if (col > last) last = col;
+                var rt = (RectTransform)b.Go.transform;
+                rt.anchoredPosition = baseAt + new Vector2(step * col, lift + step * row);
+            }
+            _sideAt = baseAt.x + step * last + side * 0.65f;
+        }
+
+        private static int Group(Entry entry) => Mathf.Clamp(entry.Col, 0, Counted.Length - 1);
+
+        private static Entry Anchor()
+        {
+            foreach (var b in Buttons) if (b.Go != null && b.Enabled()) return b;
+            return null;
+        }
+
+        private static Entry Named(string name)
+        {
+            foreach (var b in Buttons) if (b.Name == name) return b;
+            return null;
         }
 
         private static Font GameFont()
@@ -169,13 +252,28 @@ namespace NewAgeQoL
             {
                 if (!Artifacts.Busy && !string.IsNullOrEmpty(Artifacts.Status)
                     && Time.unscaledTime - Artifacts.StatusAt > 4f) Artifacts.Status = "";
-                if (!world || string.IsNullOrEmpty(Artifacts.Status))
+                if (!Flasks.AnyBusy && !string.IsNullOrEmpty(Flasks.Status)
+                    && Time.unscaledTime - Flasks.StatusAt > 5f) Flasks.Status = "";
+
+                string line = null;
+                Entry owner = null;
+                if (!string.IsNullOrEmpty(Artifacts.Status))
+                {
+                    line = "Артефакты: " + Artifacts.Status;
+                    owner = Named("QoLArtifactButton");
+                }
+                else if (!string.IsNullOrEmpty(Flasks.Status))
+                {
+                    line = Flasks.Status;
+                    owner = Named("QoLFlaskButton" + Flasks.StatusRow);
+                }
+                if (owner == null || owner.Go == null || !owner.Enabled()) owner = Anchor();
+                var host = owner != null ? owner.Go : null;
+                if (!world || line == null || host == null)
                 {
                     if (_status != null) _status.gameObject.SetActive(false);
                     return;
                 }
-                var host = Buttons[1].Go;
-                if (host == null) return;
                 var hostRt = (RectTransform)host.transform;
                 if (_status == null)
                 {
@@ -199,10 +297,10 @@ namespace NewAgeQoL
                     _status = t;
                 }
                 var srt = (RectTransform)_status.transform;
-                srt.anchoredPosition = hostRt.anchoredPosition + new Vector2(hostRt.rect.width * 0.65f, 0f);
+                srt.anchoredPosition = new Vector2(RightOf(hostRt), hostRt.anchoredPosition.y);
                 srt.SetAsLastSibling();
                 if (!_status.gameObject.activeSelf) _status.gameObject.SetActive(true);
-                _status.text = "Артефакты: " + Artifacts.Status;
+                _status.text = line;
                 HideHint();
             }
             catch { }
@@ -212,7 +310,14 @@ namespace NewAgeQoL
 
         private static bool Busy()
         {
-            return Artifacts.Busy || !string.IsNullOrEmpty(Artifacts.Status);
+            return Artifacts.Busy || !string.IsNullOrEmpty(Artifacts.Status)
+                || Flasks.AnyBusy || !string.IsNullOrEmpty(Flasks.Status);
+        }
+
+        private static float RightOf(RectTransform near)
+        {
+            float own = near.anchoredPosition.x + near.rect.width * 0.65f;
+            return _sideAt > own ? _sideAt : own;
         }
 
         private static void ShowHint(RectTransform near, string text)
@@ -243,7 +348,7 @@ namespace NewAgeQoL
                 if (Busy()) { HideHint(); return; }
                 _hint.text = text;
                 var hrt = (RectTransform)_hint.transform;
-                hrt.anchoredPosition = near.anchoredPosition + new Vector2(near.rect.width * 0.65f, 0f);
+                hrt.anchoredPosition = new Vector2(RightOf(near), near.anchoredPosition.y);
                 hrt.SetAsLastSibling();
                 _hint.gameObject.SetActive(true);
             }
@@ -429,6 +534,8 @@ namespace NewAgeQoL
                 if (sprite != null) icon.sprite = sprite;
                 entry.Icon = icon;
 
+                if (entry.Badge != null) entry.Count = Badge(rt, side, entry.Badge());
+
                 var button = go.GetComponent<Button>();
                 if (button == null) button = go.AddComponent<Button>();
                 button.onClick = new Button.ButtonClickedEvent();
@@ -451,6 +558,36 @@ namespace NewAgeQoL
                                     + ", иконка " + (sprite != null ? sprite.name : "нет"));
             }
             catch (System.Exception e) { Plugin.Log?.LogError("[buttons] " + e); }
+        }
+
+        private static Text Badge(RectTransform host, float side, string text)
+        {
+            var go = new GameObject("count", typeof(RectTransform), typeof(Text), typeof(Outline));
+            go.transform.SetParent(host, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(0.5f, 0f);
+            rt.offsetMin = new Vector2(side * 0.1f, side * 0.06f);
+            rt.offsetMax = new Vector2(-side * 0.1f, side * 0.4f);
+            rt.localScale = Vector3.one;
+            rt.SetAsLastSibling();
+
+            var label = go.GetComponent<Text>();
+            label.font = GameFont();
+            label.fontSize = Mathf.Max(11, Mathf.RoundToInt(side * 0.27f));
+            label.fontStyle = FontStyle.Bold;
+            label.alignment = TextAnchor.LowerRight;
+            label.color = new Color(1f, 0.93f, 0.62f);
+            label.raycastTarget = false;
+            label.horizontalOverflow = HorizontalWrapMode.Overflow;
+            label.verticalOverflow = VerticalWrapMode.Overflow;
+            label.text = text ?? "";
+
+            var outline = go.GetComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.95f);
+            outline.effectDistance = new Vector2(1.4f, -1.4f);
+            return label;
         }
 
         private static Sprite Pick(string bottomPanelName, int tabFallback)
@@ -481,13 +618,19 @@ namespace NewAgeQoL
             catch (System.Exception e) { Plugin.Log?.LogError("[buttons] " + e.Message); }
         }
 
-        private static bool InCombat()
+        internal static string Scene()
+        {
+            try { return UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? ""; }
+            catch { return ""; }
+        }
+
+        internal static bool InCombat()
         {
             try { return SceneWorkFlow.IsCurrentScene(EUnityScene.CombatLocation); }
             catch { return false; }
         }
 
-        private static bool InWorld()
+        internal static bool InWorld()
         {
             try
             {

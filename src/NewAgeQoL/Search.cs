@@ -26,9 +26,7 @@ namespace NewAgeQoL
         internal static string TextOf(ThingItemMessage t)
         {
             if (t == null) return null;
-            var known = Store.Text(t.ThingId);
-            if (string.IsNullOrEmpty(t.Name)) return known;
-            return string.IsNullOrEmpty(known) ? t.Name : t.Name + " " + known;
+            return string.IsNullOrEmpty(t.Name) ? Store.Text(t.ThingId) : t.Name;
         }
 
         internal static bool Match(ThingItemMessage t)
@@ -45,9 +43,9 @@ namespace NewAgeQoL
             return value.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
         }
 
-        private static void Remember(int thingId, string name, string description)
+        private static void Remember(int thingId, string name)
         {
-            Store.SetText(thingId, (Flat(name) + " " + Flat(description)).Trim());
+            Store.SetText(thingId, Flat(name).Trim());
         }
 
         internal static void Learn(IEnumerable<ThingItemMessage> things)
@@ -122,14 +120,14 @@ namespace NewAgeQoL
         {
             var info = msg as GeneralThingInfoMessage;
             if (info == null || info.ThingId <= 0) return;
-            Remember(info.ThingId, info.Name, info.Description);
+            Remember(info.ThingId, info.Name);
         }
 
         private static void OnRecipeInfo(object msg)
         {
             var info = msg as GeneralPrescriptionInfoMessage;
             if (info == null || info.ThingId <= 0) return;
-            Remember(info.ThingId, info.Name, info.Description);
+            Remember(info.ThingId, info.Name);
         }
 
         internal static void Clear()
@@ -220,14 +218,18 @@ namespace NewAgeQoL
             }
         }
 
-        internal static RectTransform PendingPanel;
+        private static float _lookAt;
 
         private static void EnsureBuilt()
         {
             if (_field != null && _panel != null) return;
+            if (Time.unscaledTime < _lookAt) return;
+            _lookAt = Time.unscaledTime + 1f;
+
             if (_field != null) { UnityEngine.Object.Destroy(_field.gameObject); _field = null; }
-            if (PendingPanel == null) return;
-            Build(PendingPanel);
+            var panel = UnityEngine.Object.FindObjectOfType<InventoryPanelContent>();
+            if (panel == null) return;
+            Build(panel.transform as RectTransform);
         }
 
         internal static void Build(RectTransform panel)
@@ -359,23 +361,6 @@ namespace NewAgeQoL
             Place();
             Plugin.Log?.LogDebug("[search] строка поиска добавлена, образец «"
                                  + (template != null ? template.name : "свой") + "»");
-        }
-    }
-
-    [HarmonyPatch(typeof(BaseGridContentPanel<InventoryThingTabContentDto>), "Awake")]
-    public static class SearchPanelPatch
-    {
-        private static readonly AccessTools.FieldRef<BaseGridContentPanel<InventoryThingTabContentDto>, GameObject> GridRef =
-            AccessTools.FieldRefAccess<BaseGridContentPanel<InventoryThingTabContentDto>, GameObject>("GoTabContentGrid");
-
-        private static void Postfix(BaseGridContentPanel<InventoryThingTabContentDto> __instance)
-        {
-            try
-            {
-                if (GridRef(__instance) == null) return;
-                Search.PendingPanel = __instance.transform as RectTransform;
-            }
-            catch (Exception e) { Plugin.Log?.LogError("[search] панель: " + e.Message); }
         }
     }
 

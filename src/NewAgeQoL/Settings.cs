@@ -41,8 +41,20 @@ namespace NewAgeQoL
                 B("Кнопка возврата в Иллениум", Plugin.CfgTownButton),
                 B("Кнопка артефактов", Plugin.CfgArtifactButtons),
 
+                new Header { Title = "Банки" },
+                B("Кнопки банок", Plugin.CfgFlaskButtons),
+                B("Пить до полного", Plugin.CfgFlaskFillToMax),
+                Btn("Жизнь — id или название", Plugin.CfgFlaskHpName, Plugin.CfgFlaskHpId),
+                Btn("Мана — id или название", Plugin.CfgFlaskManaName, Plugin.CfgFlaskManaId),
+                Btn("Энергия — id или название", Plugin.CfgFlaskEnergyName, Plugin.CfgFlaskEnergyId),
+                Btn("Грибы — id или название", Plugin.CfgFlaskMushroomName, Plugin.CfgFlaskMushroomId),
+
+                new Header { Title = "Бой" },
+                B("Пополнение без ожидания анимаций", Plugin.CfgInstantRestore),
+
                 new Header { Title = "Инвентарь" },
                 B("Иконка вещи у рецепта", Plugin.CfgRecipeIcons),
+                B("id предмета в названии", Plugin.CfgItemIds),
                 B("Вкладка «Контракты»", Plugin.CfgContractsTab),
                 B("Поиск в сумке", Plugin.CfgSearch),
                 B("Свои строки в логе зелёным", Plugin.CfgChatHighlight),
@@ -66,7 +78,7 @@ namespace NewAgeQoL
                 {
                     v = (v ?? "").Trim();
                     if (int.TryParse(v, out int n)) { byId.Value = n; byName.Value = ""; }
-                    else byName.Value = v;
+                    else { byName.Value = v; byId.Value = 0; }
                 },
                 Remember = () => { Remember(byName); Remember(byId); },
                 Reset = () => { byName.Value = (string)byName.DefaultValue; byId.Value = (int)byId.DefaultValue; },
@@ -166,6 +178,8 @@ namespace NewAgeQoL
 
             if (caption != null) caption.text = "Настройки мода";
 
+            Widen(dlg, 220f);
+
             if (okButton != null)
             {
                 okButton.onClick.RemoveAllListeners();
@@ -192,6 +206,27 @@ namespace NewAgeQoL
             if (Plugin.Instance != null) Plugin.Instance.StartCoroutine(ScrollTopNextFrame(scroll));
         }
 
+        // Подписи у нас длиннее игровых («Пополнение без ожидания анимаций»), в исходную ширину окна
+        // они не помещаются и упираются в края. Раздвигаем окно и всё, что не тянется само.
+        private static void Widen(HotkeysDialog dlg, float extra)
+        {
+            try
+            {
+                var rt = dlg.transform as RectTransform;
+                if (rt == null) return;
+                Grow(rt, extra);
+                foreach (RectTransform child in rt)
+                    if (Mathf.Abs(child.anchorMax.x - child.anchorMin.x) < 0.01f) Grow(child, extra);
+            }
+            catch (Exception e) { Plugin.Log?.LogError("[settings] ширина окна: " + e.Message); }
+        }
+
+        private static void Grow(RectTransform rt, float extra)
+        {
+            if (Mathf.Abs(rt.anchorMax.x - rt.anchorMin.x) > 0.01f) return;
+            rt.sizeDelta = new Vector2(rt.sizeDelta.x + extra, rt.sizeDelta.y);
+        }
+
         private static void AddRow(GameObject rowPrefab, Transform container, RowDef def)
         {
             var go = UnityEngine.Object.Instantiate(rowPrefab, container, worldPositionStays: false);
@@ -210,7 +245,18 @@ namespace NewAgeQoL
                 UnityEngine.Object.Destroy(widget);
             }
             if (label == null) label = go.GetComponentInChildren<Text>(true);
-            if (label != null) label.text = def.Title;
+            if (label != null)
+            {
+                label.text = def.Title;
+                if (!(def is Header))
+                {
+                    label.resizeTextForBestFit = true;
+                    label.resizeTextMaxSize = label.fontSize;
+                    label.resizeTextMinSize = 8;
+                    var lrt = label.rectTransform;
+                    lrt.offsetMin = new Vector2(lrt.offsetMin.x + 8f, lrt.offsetMin.y);
+                }
+            }
 
             if (def is Header)
             {
