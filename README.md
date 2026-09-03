@@ -4,7 +4,7 @@
 
 ## Установка
 
-Проще всего взять `NewAgeQoL-1.0.0-with-BepInEx.zip` со [страницы релиза](https://github.com/vsarapin-developer/newagemod/releases/latest) и распаковать в папку игры — туда, где лежит `NewAgeClient.exe`. Внутри уже всё: и плагин, и загрузчик BepInEx, который его запускает. Больше ничего скачивать не нужно.
+Проще всего взять архив со [страницы релиза](https://github.com/vsarapin-developer/newagemod/releases/latest) и распаковать в папку игры — туда, где лежит `NewAgeClient.exe`. Внутри уже всё: и плагин, и загрузчик BepInEx, который его запускает. Больше ничего скачивать не нужно.
 
 Если BepInEx 5 у тебя уже стоит, достаточно положить `NewAgeQoL.dll` из релиза в `New Age\BepInEx\plugins\`.
 
