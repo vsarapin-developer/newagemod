@@ -254,7 +254,8 @@ namespace NewAgeQoL
                     label.resizeTextMaxSize = label.fontSize;
                     label.resizeTextMinSize = 8;
                     var lrt = label.rectTransform;
-                    lrt.offsetMin = new Vector2(lrt.offsetMin.x + 8f, lrt.offsetMin.y);
+                    lrt.offsetMin = new Vector2(lrt.offsetMin.x + 34f, lrt.offsetMin.y);
+                    lrt.offsetMax = new Vector2(lrt.offsetMax.x + 20f, lrt.offsetMax.y);
                 }
             }
 
