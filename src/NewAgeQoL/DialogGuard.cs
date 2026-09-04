@@ -3,10 +3,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    // Окно докупки за деньги спрашивает цену у сервера и обновляет себя из ответа по захваченной ссылке.
-    // Если к приходу ответа окно уже закрыто, обновление падает на уничтоженной кнопке — и падает не само
-    // по себе, а внутри NetworkConnection.Update, обрывая разбор входящих сообщений: клиент выглядит
-    // зависшим, поверх экрана остаётся мёртвый модальный слой. Пропускаем такое обновление молча.
+
     [HarmonyPatch(typeof(PriceConfirmMessageBoxRefreshByNetwork), "UpdateByPriceMessage")]
     public static class PriceBoxGuardPatch
     {

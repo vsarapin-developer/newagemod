@@ -45,7 +45,9 @@ namespace NewAgeQoL
 
         private static void Remember(int thingId, string name)
         {
-            Store.SetText(thingId, Flat(name).Trim());
+            string text = Flat(name).Trim();
+            Store.SetText(thingId, text);
+            ContractNumbers.Learn(thingId, text);
         }
 
         internal static void Learn(IEnumerable<ThingItemMessage> things)
@@ -53,18 +55,25 @@ namespace NewAgeQoL
             if (things == null) return;
             int asked = 0;
             foreach (var t in things)
-            {
-                if (t == null) continue;
-                if (Store.Text(t.ThingId) != null) continue;
-                lock (Asked)
-                {
-                    if (Asked.Contains(t.ThingId)) continue;
-                    Asked.Add(t.ThingId);
-                    Waiting.Enqueue(t.ThingId);
-                }
-                asked++;
-            }
+                if (t != null && Ask(t.ThingId)) asked++;
             if (asked > 0) Drain();
+        }
+
+        internal static bool Ask(int thingId)
+        {
+            if (thingId <= 0 || Store.Text(thingId) != null) return false;
+            lock (Asked)
+            {
+                if (Asked.Contains(thingId)) return false;
+                Asked.Add(thingId);
+                Waiting.Enqueue(thingId);
+            }
+            return true;
+        }
+
+        internal static void AskNow(int thingId)
+        {
+            if (Ask(thingId)) Drain();
         }
 
         private static void Drain()

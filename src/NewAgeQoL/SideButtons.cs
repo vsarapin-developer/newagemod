@@ -29,8 +29,12 @@ namespace NewAgeQoL
             {
                 Name = "QoLTownButton",
                 Col = 0,
-                Hint = () => Artifacts.Busy ? "Идёт работа с хранилищем" : "Вернуться в Иллениум",
-                Usable = () => !Artifacts.Busy,
+                Hint = () => Artifacts.Busy ? "Идёт работа с хранилищем"
+                           : TownWalk.Busy ? "Уже иду"
+                           : Plugin.CfgTownTournament != null && Plugin.CfgTownTournament.Value
+                             ? "В город, потом на арену и к турнирам"
+                             : "Вернуться в Иллениум",
+                Usable = () => !Artifacts.Busy && !TownWalk.Busy,
                 Enabled = () => Plugin.CfgTownButton == null || Plugin.CfgTownButton.Value,
                 Sprite = () => Pick("toTheCity", 4),
                 Click = GoHome,
@@ -47,9 +51,20 @@ namespace NewAgeQoL
                 Click = () =>
                 {
                     if (Artifacts.Busy) return;
+                    Travel.Cancel("занялся артефактами");
                     if (Artifacts.HasStash) Artifacts.Restore();
                     else Artifacts.Stash();
                 },
+            },
+            new Entry
+            {
+                Name = "QoLTravelButton",
+                Col = 2,
+                Hint = () => Travel.Busy ? "Идёт поход — можно выбрать другую точку" : "Куда идти: список точек",
+                Enabled = () => Travel.Enabled && Travel.Spots().Count > 0,
+                Sprite = () => Pick(1, "move5", "move3", "mines_attack", "assassinate"),
+                Badge = () => Travel.Busy ? "▶" : "",
+                Click = TravelMenu.Toggle,
             },
         };
 
@@ -76,6 +91,7 @@ namespace NewAgeQoL
 
         internal static void Tick()
         {
+            TravelMenu.Hover();
             if (Time.unscaledTime < _next) return;
             _next = Time.unscaledTime + 0.2f;
 
@@ -123,9 +139,97 @@ namespace NewAgeQoL
                 bool show = ready && b.Enabled();
                 if (show && !b.Go.activeSelf) b.Go.SetActive(true);
             }
+            if (_panel != null && _panel.gameObject.activeSelf != ready) _panel.gameObject.SetActive(ready);
+            TravelMenu.Tick(ready);
             UpdateStatus(world);
             if (!world) HideHint();
         }
+
+        private static RectTransform _panel;
+
+        private static RectTransform Panel(RectTransform parent)
+        {
+            if (_panel != null) return _panel;
+            if (parent == null) return null;
+
+            var go = new GameObject("QoLPanel", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.localScale = Vector3.one;
+            rt.sizeDelta = new Vector2(_cellSide, _cellSide);
+
+            var back = go.GetComponent<Image>();
+            back.color = new Color(0.04f, 0.05f, 0.07f, 0.42f);
+            back.raycastTarget = false;
+
+            _panel = rt;
+            return _panel;
+        }
+
+        private static void Place()
+        {
+            if (_panel == null) return;
+            var bag = Bag();
+            if (bag == null) return;
+            var parent = Root(bag);
+            if (parent == null) return;
+
+            Rect menu = Around(parent);
+            if (menu.width <= 0f) return;
+
+            Vector2 size = _panel.sizeDelta;
+            Rect area = parent.rect;
+            float x = Mathf.Min(menu.xMax + Gap, area.xMax - size.x);
+            float y = Mathf.Clamp(menu.yMin, area.yMin, area.yMax - size.y);
+
+            var corner = new Vector2(0f, 0f);
+            if (_panel.pivot != corner) _panel.pivot = corner;
+            var middle = new Vector2(0.5f, 0.5f);
+            if (_panel.anchorMin != middle) _panel.anchorMin = middle;
+            if (_panel.anchorMax != middle) _panel.anchorMax = middle;
+            _panel.anchoredPosition = new Vector2(x, y);
+        }
+
+        private static Rect Around(RectTransform parent)
+        {
+            var group = _menu != null ? _menu : (Bag() != null ? Bag().parent as RectTransform : null);
+            if (group == null) return new Rect();
+
+            float xMin = float.MaxValue, xMax = float.MinValue, yMin = float.MaxValue, yMax = float.MinValue;
+            var corners = new Vector3[4];
+            foreach (var button in group.GetComponentsInChildren<Button>(false))
+            {
+                var rt = button.transform as RectTransform;
+                if (rt == null || rt.rect.width < 4f) continue;
+                rt.GetWorldCorners(corners);
+                for (int i = 0; i < 4; i++)
+                {
+                    Vector2 local = parent.InverseTransformPoint(corners[i]);
+                    if (local.x < xMin) xMin = local.x;
+                    if (local.x > xMax) xMax = local.x;
+                    if (local.y < yMin) yMin = local.y;
+                    if (local.y > yMax) yMax = local.y;
+                }
+            }
+            if (xMax < xMin) return new Rect();
+            return Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+        }
+
+        internal static bool AtRightSide
+        {
+            get
+            {
+                if (_panel == null) return false;
+                var parent = _panel.parent as RectTransform;
+                if (parent == null || parent.rect.width < 1f) return false;
+                Vector2 center = parent.InverseTransformPoint(_panel.TransformPoint(_panel.rect.center));
+                return center.x > parent.rect.width * 0.25f;
+            }
+        }
+
+        internal static RectTransform PanelRect => _panel;
 
         private static RectTransform Root(RectTransform any)
         {
@@ -135,7 +239,7 @@ namespace NewAgeQoL
             return (RectTransform)root.transform;
         }
 
-        private static RectTransform _bag;
+        private static RectTransform _bag, _menu;
         private static float _bagAt = -1f;
 
         private static RectTransform Bag()
@@ -158,35 +262,26 @@ namespace NewAgeQoL
 
                 var bag = menu != null ? menu.InventoryMenuButton : null;
                 if (bag == null || !bag.gameObject.activeInHierarchy) return null;
+                _menu = menu.transform as RectTransform;
                 return (RectTransform)bag.transform;
             }
             catch { return null; }
         }
 
-        private static Vector2 Base(RectTransform bag, RectTransform parent)
-        {
-            Vector3 world = bag.TransformPoint(bag.rect.center);
-            Vector2 local = parent.InverseTransformPoint(world);
-            return local - parent.rect.center;
-        }
-
         private const int PerColumn = 2;
+        private const float Gap = 8f;
+        private const float Pad = 7f;
 
         private static readonly int[] Counted = new int[4];
         private static readonly int[] Placed = new int[4];
         private static readonly int[] FirstColumn = new int[4];
-        private static float _sideAt;
 
         private static void Layout()
         {
-            var bag = Bag();
-            if (bag == null) return;
-            var parent = Root(bag);
+            if (_panel == null) return;
 
             float side = _cellSide;
-            float step = side + 8f;
-            float lift = bag.rect.height * 0.6f + side * 0.7f + 10f;
-            Vector2 baseAt = Base(bag, parent);
+            float step = side + Gap;
 
             for (int i = 0; i < Counted.Length; i++) { Counted[i] = 0; Placed[i] = 0; }
             foreach (var b in Buttons)
@@ -200,20 +295,38 @@ namespace NewAgeQoL
                 FirstColumn[g] = next;
                 next += (Counted[g] + PerColumn - 1) / PerColumn;
             }
+            if (next == 0) return;
 
-            int last = 0;
+            int lastCol = 0, lastRow = 0;
             foreach (var b in Buttons)
             {
                 if (b.Go == null || !b.Enabled()) continue;
-                int group = Group(b);
-                int n = Placed[group]++;
-                int col = FirstColumn[group] + n / PerColumn;
+                int n = Placed[Group(b)]++;
+                int col = FirstColumn[Group(b)] + n / PerColumn;
                 int row = n % PerColumn;
-                if (col > last) last = col;
-                var rt = (RectTransform)b.Go.transform;
-                rt.anchoredPosition = baseAt + new Vector2(step * col, lift + step * row);
+                if (col > lastCol) lastCol = col;
+                if (row > lastRow) lastRow = row;
             }
-            _sideAt = baseAt.x + step * last + side * 0.65f;
+
+            float width = (lastCol + 1) * side + lastCol * Gap + Pad * 2f;
+            float height = (lastRow + 1) * side + lastRow * Gap + Pad * 2f;
+            _panel.sizeDelta = new Vector2(width, height);
+
+            float left = -width * 0.5f + Pad + side * 0.5f;
+            float bottom = -height * 0.5f + Pad + side * 0.5f;
+
+            for (int i = 0; i < Placed.Length; i++) Placed[i] = 0;
+            foreach (var b in Buttons)
+            {
+                if (b.Go == null || !b.Enabled()) continue;
+                int n = Placed[Group(b)]++;
+                int col = FirstColumn[Group(b)] + n / PerColumn;
+                int row = n % PerColumn;
+                var rt = (RectTransform)b.Go.transform;
+                rt.anchoredPosition = new Vector2(left + step * col, bottom + step * row);
+            }
+
+            Place();
         }
 
         private static int Group(Entry entry) => Mathf.Clamp(entry.Col, 0, Counted.Length - 1);
@@ -224,13 +337,26 @@ namespace NewAgeQoL
             return null;
         }
 
+        internal static RectTransform ButtonRect(string name)
+        {
+            var entry = Named(name);
+            return entry != null && entry.Go != null ? (RectTransform)entry.Go.transform : null;
+        }
+
+        internal static float RowOf(string name)
+        {
+            var entry = Named(name);
+            if (entry == null || entry.Go == null) return 0f;
+            return ((RectTransform)entry.Go.transform).anchoredPosition.y;
+        }
+
         private static Entry Named(string name)
         {
             foreach (var b in Buttons) if (b.Name == name) return b;
             return null;
         }
 
-        private static Font GameFont()
+        internal static Font GameFont()
         {
             var holder = VisualPrefabsHolder.Instance;
             if (holder != null && holder.BoldStandardFont != null) return holder.BoldStandardFont;
@@ -249,9 +375,17 @@ namespace NewAgeQoL
                 if (!Flasks.AnyBusy && !string.IsNullOrEmpty(Flasks.Status)
                     && Time.unscaledTime - Flasks.StatusAt > 5f) Flasks.Status = "";
 
+                if (!Travel.Busy && !string.IsNullOrEmpty(Travel.Status)
+                    && Time.unscaledTime - Travel.StatusAt > 6f) Travel.Status = "";
+
                 string line = null;
                 Entry owner = null;
-                if (!string.IsNullOrEmpty(Artifacts.Status))
+                if (!string.IsNullOrEmpty(Travel.Status))
+                {
+                    line = Travel.Status;
+                    owner = Named("QoLTravelButton");
+                }
+                else if (!string.IsNullOrEmpty(Artifacts.Status))
                 {
                     line = "Артефакты: " + Artifacts.Status;
                     owner = Named("QoLArtifactButton");
@@ -263,7 +397,7 @@ namespace NewAgeQoL
                 }
                 if (owner == null || owner.Go == null || !owner.Enabled()) owner = Anchor();
                 var host = owner != null ? owner.Go : null;
-                if (!world || line == null || host == null)
+                if (!world || line == null || host == null || TravelMenu.Open)
                 {
                     if (_status != null) _status.gameObject.SetActive(false);
                     return;
@@ -291,7 +425,7 @@ namespace NewAgeQoL
                     _status = t;
                 }
                 var srt = (RectTransform)_status.transform;
-                srt.anchoredPosition = new Vector2(RightOf(hostRt), hostRt.anchoredPosition.y);
+                srt.anchoredPosition = new Vector2(SideOf(_status), hostRt.anchoredPosition.y);
                 srt.SetAsLastSibling();
                 if (!_status.gameObject.activeSelf) _status.gameObject.SetActive(true);
                 _status.text = line;
@@ -305,20 +439,25 @@ namespace NewAgeQoL
         private static bool Busy()
         {
             return Artifacts.Busy || !string.IsNullOrEmpty(Artifacts.Status)
-                || Flasks.AnyBusy || !string.IsNullOrEmpty(Flasks.Status);
+                || Flasks.AnyBusy || !string.IsNullOrEmpty(Flasks.Status)
+                || Travel.Busy || !string.IsNullOrEmpty(Travel.Status);
         }
 
-        private static float RightOf(RectTransform near)
+        private static float SideOf(Text label)
         {
-            float own = near.anchoredPosition.x + near.rect.width * 0.65f;
-            return _sideAt > own ? _sideAt : own;
+            bool left = AtRightSide;
+            var rt = (RectTransform)label.transform;
+            rt.pivot = new Vector2(left ? 1f : 0f, 0.5f);
+            label.alignment = left ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
+            float half = _panel != null ? _panel.sizeDelta.x * 0.5f : 0f;
+            return left ? -(half + 10f) : half + 10f;
         }
 
         private static void ShowHint(RectTransform near, string text)
         {
             try
             {
-                if (Busy()) return;
+                if (Busy() || TravelMenu.Open) return;
                 if (_hint == null)
                 {
                     var go = new GameObject("QoLHint", typeof(RectTransform), typeof(Text), typeof(Outline));
@@ -342,7 +481,7 @@ namespace NewAgeQoL
                 if (Busy()) { HideHint(); return; }
                 _hint.text = text;
                 var hrt = (RectTransform)_hint.transform;
-                hrt.anchoredPosition = new Vector2(RightOf(near), near.anchoredPosition.y);
+                hrt.anchoredPosition = new Vector2(SideOf(_hint), near.anchoredPosition.y);
                 hrt.SetAsLastSibling();
                 _hint.gameObject.SetActive(true);
             }
@@ -357,6 +496,10 @@ namespace NewAgeQoL
         private static GameObject _cell;
         private static float _cellSide = 64f;
         private static float _cellAt = -100f;
+
+        internal static float CellSide => _cellSide;
+
+        internal static GameObject CellPrefab() => Cell();
 
         private static GameObject Cell()
         {
@@ -389,7 +532,7 @@ namespace NewAgeQoL
             return _cell;
         }
 
-        private static void Strip(GameObject go)
+        internal static void Strip(GameObject go)
         {
             foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true))
             {
@@ -414,111 +557,123 @@ namespace NewAgeQoL
             trigger.triggers.Add(e);
         }
 
+        internal static GameObject BuildCell(RectTransform parent, string name, float side,
+                                             out Image icon, out Image frame, out Image background)
+        {
+            var cell = Cell();
+            GameObject go;
+            if (cell != null)
+            {
+                go = Object.Instantiate(cell, parent);
+                go.SetActive(false);
+                Strip(go);
+                foreach (var tx in go.GetComponentsInChildren<Text>(true)) tx.gameObject.SetActive(false);
+            }
+            else
+            {
+                go = new GameObject("cell", typeof(RectTransform), typeof(Image));
+                go.transform.SetParent(parent, false);
+                go.SetActive(false);
+                var edge = new GameObject("frame", typeof(RectTransform), typeof(Image));
+                edge.transform.SetParent(go.transform, false);
+                edge.GetComponent<Image>().sprite =
+                    AtlasUtils.GetStateHighlightingSprite(EHighlightingType.Positive);
+            }
+            go.name = name;
+
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.localScale = Vector3.one;
+            rt.localRotation = Quaternion.identity;
+            rt.sizeDelta = new Vector2(side, side);
+            rt.SetAsLastSibling();
+
+            background = null;
+            frame = null;
+            icon = null;
+            foreach (var im in go.GetComponentsInChildren<Image>(true))
+            {
+                if (im.transform == rt) { background = im; continue; }
+                var crt = (RectTransform)im.transform;
+                crt.anchorMin = Vector2.zero;
+                crt.anchorMax = Vector2.one;
+                crt.pivot = new Vector2(0.5f, 0.5f);
+                crt.offsetMin = Vector2.zero;
+                crt.offsetMax = Vector2.zero;
+                crt.localScale = Vector3.one;
+                crt.localRotation = Quaternion.identity;
+                im.raycastTarget = false;
+
+                bool looksFrame = im.name.IndexOf("frame", System.StringComparison.OrdinalIgnoreCase) >= 0
+                           || im.name.IndexOf("border", System.StringComparison.OrdinalIgnoreCase) >= 0
+                           || im.name.IndexOf("highlight", System.StringComparison.OrdinalIgnoreCase) >= 0;
+                if (looksFrame) frame = im;
+                else if (icon == null) icon = im;
+            }
+
+            if (icon == null)
+            {
+                var iconGo = new GameObject("icon", typeof(RectTransform), typeof(Image));
+                iconGo.transform.SetParent(rt, false);
+                icon = iconGo.GetComponent<Image>();
+                icon.raycastTarget = false;
+                var irt = (RectTransform)iconGo.transform;
+                irt.anchorMin = Vector2.zero;
+                irt.anchorMax = Vector2.one;
+                if (frame != null) ((RectTransform)frame.transform).SetAsLastSibling();
+            }
+
+            float inset = side * 0.1f;
+            var iconRt = (RectTransform)icon.transform;
+            iconRt.offsetMin = new Vector2(inset, inset);
+            iconRt.offsetMax = new Vector2(-inset, -inset);
+
+            if (background != null)
+            {
+                background.enabled = true;
+                background.raycastTarget = true;
+                background.color = new Color(1f, 1f, 1f, 0f);
+            }
+
+            var backGo = new GameObject("back", typeof(RectTransform), typeof(Image));
+            backGo.transform.SetParent(rt, false);
+            backGo.transform.SetAsFirstSibling();
+            var backRt = (RectTransform)backGo.transform;
+            backRt.anchorMin = Vector2.zero;
+            backRt.anchorMax = Vector2.one;
+            float pad = side * 0.04f;
+            backRt.offsetMin = new Vector2(pad, pad);
+            backRt.offsetMax = new Vector2(-pad, -pad);
+            var back = backGo.GetComponent<Image>();
+            back.color = new Color(0.05f, 0.05f, 0.06f, 0.6f);
+            back.raycastTarget = false;
+
+            if (frame != null)
+            {
+                frame.gameObject.SetActive(true);
+                frame.enabled = true;
+                frame.color = Color.white;
+                var edge = AtlasUtils.GetStateHighlightingSprite(EHighlightingType.Positive);
+                if (edge != null) frame.sprite = edge;
+            }
+            return go;
+        }
+
         private static void Create(Entry entry)
         {
             try
             {
                 var bag = Bag();
                 if (bag == null) return;
-                var parent = Root(bag);
+                var parent = Panel(Root(bag));
                 if (parent == null) return;
 
-                var cell = Cell();
-                GameObject go;
-                if (cell != null)
-                {
-                    go = Object.Instantiate(cell, parent);
-                    go.SetActive(false);
-                    Strip(go);
-                    foreach (var tx in go.GetComponentsInChildren<Text>(true)) tx.gameObject.SetActive(false);
-                }
-                else
-                {
-                    go = new GameObject("cell", typeof(RectTransform), typeof(Image));
-                    go.transform.SetParent(parent, false);
-                    go.SetActive(false);
-                    var edge = new GameObject("frame", typeof(RectTransform), typeof(Image));
-                    edge.transform.SetParent(go.transform, false);
-                    edge.GetComponent<Image>().sprite =
-                        AtlasUtils.GetStateHighlightingSprite(EHighlightingType.Positive);
-                }
-                go.name = entry.Name;
-
+                var go = BuildCell(parent, entry.Name, _cellSide, out var icon, out var frame, out var background);
+                if (go == null) return;
+                go.SetActive(false);
                 float side = _cellSide;
                 var rt = (RectTransform)go.transform;
-                rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.localScale = Vector3.one;
-                rt.localRotation = Quaternion.identity;
-                rt.sizeDelta = new Vector2(side, side);
-                rt.SetAsLastSibling();
-
-                Image background = null, frame = null, icon = null;
-                foreach (var im in go.GetComponentsInChildren<Image>(true))
-                {
-                    if (im.transform == rt) { background = im; continue; }
-                    var crt = (RectTransform)im.transform;
-                    crt.anchorMin = Vector2.zero;
-                    crt.anchorMax = Vector2.one;
-                    crt.pivot = new Vector2(0.5f, 0.5f);
-                    crt.offsetMin = Vector2.zero;
-                    crt.offsetMax = Vector2.zero;
-                    crt.localScale = Vector3.one;
-                    crt.localRotation = Quaternion.identity;
-                    im.raycastTarget = false;
-
-                    bool looksFrame = im.name.IndexOf("frame", System.StringComparison.OrdinalIgnoreCase) >= 0
-                                   || im.name.IndexOf("border", System.StringComparison.OrdinalIgnoreCase) >= 0
-                                   || im.name.IndexOf("highlight", System.StringComparison.OrdinalIgnoreCase) >= 0;
-                    if (looksFrame) frame = im;
-                    else if (icon == null) icon = im;
-                }
-
-                if (icon == null)
-                {
-                    var iconGo = new GameObject("icon", typeof(RectTransform), typeof(Image));
-                    iconGo.transform.SetParent(rt, false);
-                    icon = iconGo.GetComponent<Image>();
-                    icon.raycastTarget = false;
-                    var irt = (RectTransform)iconGo.transform;
-                    irt.anchorMin = Vector2.zero;
-                    irt.anchorMax = Vector2.one;
-                    if (frame != null) ((RectTransform)frame.transform).SetAsLastSibling();
-                }
-
-                float inset = side * 0.1f;
-                var iconRt = (RectTransform)icon.transform;
-                iconRt.offsetMin = new Vector2(inset, inset);
-                iconRt.offsetMax = new Vector2(-inset, -inset);
-
-                if (background != null)
-                {
-                    background.enabled = true;
-                    background.raycastTarget = true;
-                    background.color = new Color(1f, 1f, 1f, 0f);
-                }
-
-                var backGo = new GameObject("back", typeof(RectTransform), typeof(Image));
-                backGo.transform.SetParent(rt, false);
-                backGo.transform.SetAsFirstSibling();
-                var backRt = (RectTransform)backGo.transform;
-                backRt.anchorMin = Vector2.zero;
-                backRt.anchorMax = Vector2.one;
-                float pad = side * 0.04f;
-                backRt.offsetMin = new Vector2(pad, pad);
-                backRt.offsetMax = new Vector2(-pad, -pad);
-                var back = backGo.GetComponent<Image>();
-                back.color = new Color(0.05f, 0.05f, 0.06f, 0.6f);
-                back.raycastTarget = false;
-
-                if (frame != null)
-                {
-                    frame.gameObject.SetActive(true);
-                    frame.enabled = true;
-                    frame.color = Color.white;
-                    var fs = AtlasUtils.GetStateHighlightingSprite(EHighlightingType.Positive);
-                    if (fs != null) frame.sprite = fs;
-                }
 
                 var sprite = entry.Sprite();
                 icon.gameObject.SetActive(true);
@@ -547,7 +702,7 @@ namespace NewAgeQoL
 
                 entry.Go = go;
                 Layout();
-                Plugin.Trace("[buttons] " + entry.Name + (cell != null ? " из клетки" : " своя") + " сторона " + side
+                Plugin.Trace("[buttons] " + entry.Name + " сторона " + side
                                     + ", рамка " + (frame != null && frame.sprite != null ? frame.sprite.name : "нет")
                                     + ", иконка " + (sprite != null ? sprite.name : "нет"));
             }
@@ -584,6 +739,30 @@ namespace NewAgeQoL
             return label;
         }
 
+        private static Sprite Pick(int tabFallback, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                try
+                {
+                    var s = AtlasUtils.GetQuickButtonSprite(name);
+                    if (Ok(s)) return s;
+                    s = AtlasUtils.GetBottomPanelSprite(EBottomPanelAtlas.BottomPanel, name);
+                    if (Ok(s)) return s;
+                    s = AtlasUtils.GetBottomPanelSpriteByName(name);
+                    if (Ok(s)) return s;
+                }
+                catch { }
+            }
+            try
+            {
+                var s = AtlasUtils.GetThingTabImage((EThingTabType)tabFallback);
+                if (Ok(s)) return s;
+            }
+            catch { }
+            return null;
+        }
+
         private static Sprite Pick(string bottomPanelName, int tabFallback)
         {
             try
@@ -605,9 +784,8 @@ namespace NewAgeQoL
         {
             try
             {
-                var nc = NetworkConnection.Instance;
-                if (nc == null || !nc.IsConnected()) return;
-                nc.SendRequest(new ReturnToIlleniumRequest(true));
+                Travel.Cancel("ты вернулся в город");
+                TownWalk.Go();
             }
             catch (System.Exception e) { Plugin.Log?.LogError("[buttons] " + e.Message); }
         }

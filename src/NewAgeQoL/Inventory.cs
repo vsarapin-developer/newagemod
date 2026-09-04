@@ -70,9 +70,6 @@ namespace NewAgeQoL
 
         private static MethodInfo _updateImage;
 
-        // Клетку с новым рецептом игра не перерисовывает: в её проверке сравнивается картинка предмета,
-        // а у всех рецептов она одна и та же (свиток). Нам это ломает подмену — в клетке остаётся
-        // результат прошлого рецепта, хотя данные уже новые. Поэтому перерисовываем сами.
         private static void Redraw(InventoryThingItemRenderer r)
         {
             try
@@ -284,21 +281,33 @@ namespace NewAgeQoL
     }
 
     [HarmonyPatch(typeof(InventoryThingItemRenderer), "Data", MethodType.Setter)]
-    public static class RecipeMarkSyncPatch
+    public static class CellDataSyncPatch
     {
-        private static void Postfix(InventoryThingItemRenderer __instance) => RecipeIcons.Sync(__instance);
+        private static void Postfix(InventoryThingItemRenderer __instance)
+        {
+            RecipeIcons.Sync(__instance);
+            ContractNumbers.Sync(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(InventoryThingItemRenderer), "Awake")]
-    public static class RecipeCellAwakePatch
+    public static class CellAwakePatch
     {
-        private static void Postfix(InventoryThingItemRenderer __instance) => RecipeIcons.Track(__instance);
+        private static void Postfix(InventoryThingItemRenderer __instance)
+        {
+            RecipeIcons.Track(__instance);
+            ContractNumbers.Track(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(InventoryThingItemRenderer), "OnDestroy")]
-    public static class RecipeCellDestroyPatch
+    public static class CellDestroyPatch
     {
-        private static void Prefix(InventoryThingItemRenderer __instance) => RecipeIcons.Forget(__instance);
+        private static void Prefix(InventoryThingItemRenderer __instance)
+        {
+            RecipeIcons.Forget(__instance);
+            ContractNumbers.Forget(__instance);
+        }
     }
 
     internal static class Contracts
@@ -309,12 +318,12 @@ namespace NewAgeQoL
         internal static int TabId => Plugin.CfgContractsTabId != null ? Plugin.CfgContractsTabId.Value : 40;
         internal static int IconTabId => Plugin.CfgContractsIcon != null ? Plugin.CfgContractsIcon.Value : 16;
 
-        internal static bool IsContract(ThingItemMessage t)
+        internal static bool IsContract(ThingItemMessage t) => t != null && IsContract(t.ThingId, t.Name);
+
+        internal static bool IsContract(int thingId, string name)
         {
-            if (t == null) return false;
-            if (t.ThingId >= 4000 && t.ThingId <= 4999) return true;
-            string n = t.Name;
-            return n != null && n.TrimStart().StartsWith("Контракт ", StringComparison.OrdinalIgnoreCase);
+            if (thingId >= 4000 && thingId <= 4999) return true;
+            return name != null && name.TrimStart().StartsWith("Контракт ", StringComparison.OrdinalIgnoreCase);
         }
 
         internal static void LearnIcon(ThingItemMessage t)
@@ -354,6 +363,266 @@ namespace NewAgeQoL
             }
             catch { }
             return null;
+        }
+    }
+
+    internal static class ContractNumbers
+    {
+        private const string BadgeName = "QoLContractNumber";
+
+        private static readonly Dictionary<int, string> Known = new Dictionary<int, string>();
+
+        private static bool _loaded, _dirty;
+        private static float _saveAt = -1f;
+
+        private static void Load()
+        {
+            if (_loaded) return;
+            _loaded = true;
+            string raw = Plugin.CfgContractCache != null ? Plugin.CfgContractCache.Value : "";
+            if (string.IsNullOrEmpty(raw)) return;
+            foreach (var piece in raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int colon = piece.IndexOf(':');
+                if (colon <= 0) continue;
+                if (!int.TryParse(piece.Substring(0, colon).Trim(), out int thingId)) continue;
+                string number = piece.Substring(colon + 1).Trim();
+                if (number.Length > 0) lock (Known) Known[thingId] = number;
+            }
+        }
+
+        private static void Save()
+        {
+            try
+            {
+                if (Plugin.CfgContractCache == null) return;
+                var text = new System.Text.StringBuilder();
+                lock (Known)
+                    foreach (var pair in Known)
+                    {
+                        if (text.Length > 0) text.Append(',');
+                        text.Append(pair.Key).Append(':').Append(pair.Value);
+                    }
+                Plugin.CfgContractCache.Value = text.ToString();
+            }
+            catch { }
+        }
+        private static readonly List<InventoryThingItemRenderer> Live = new List<InventoryThingItemRenderer>();
+
+        internal static bool Enabled => Plugin.CfgContractNumbers == null || Plugin.CfgContractNumbers.Value;
+
+        private static readonly string[] Titles = { "Контракт", "Договор" };
+
+        internal static string Parse(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            string text = name.TrimStart();
+            foreach (var title in Titles)
+            {
+                if (!text.StartsWith(title, StringComparison.OrdinalIgnoreCase)) continue;
+                int i = title.Length;
+                while (i < text.Length && (text[i] == ' ' || text[i] == '№' || text[i] == '.')) i++;
+                int from = i;
+                while (i < text.Length && text[i] >= '0' && text[i] <= '9') i++;
+                if (i > from) return text.Substring(from, i - from);
+            }
+            return null;
+        }
+
+        internal static void Ask(int thingId)
+        {
+            Load();
+            lock (Known)
+                if (Known.ContainsKey(thingId)) return;
+            Search.AskNow(thingId);
+        }
+
+        internal static int Order(int thingId, string name)
+        {
+            Load();
+            string text = string.IsNullOrEmpty(name) ? Store.Text(thingId) : name;
+            string number = Parse(text);
+            if (number == null)
+                lock (Known) Known.TryGetValue(thingId, out number);
+            return number != null && int.TryParse(number, out int value) ? value : int.MaxValue;
+        }
+
+        internal static void Learn(int thingId, string name)
+        {
+            if (thingId <= 0) return;
+            Load();
+            string number = Parse(name);
+            if (number == null) return;
+            bool fresh;
+            lock (Known)
+            {
+                fresh = !Known.TryGetValue(thingId, out var was) || was != number;
+                Known[thingId] = number;
+            }
+            if (!fresh) return;
+            Plugin.Trace("[contracts] номер " + number + " у предмета " + thingId);
+            Refresh(thingId);
+            _restackAt = Time.unscaledTime + 0.4f;
+            _dirty = true;
+            _saveAt = Time.unscaledTime + 2f;
+        }
+
+        internal static void Track(InventoryThingItemRenderer r)
+        {
+            if (r != null && !Live.Contains(r)) Live.Add(r);
+        }
+
+        internal static void Forget(InventoryThingItemRenderer r) => Live.Remove(r);
+
+        private static float _restackAt = -1f;
+
+        internal static void Tick()
+        {
+            if (_dirty && _saveAt >= 0f && Time.unscaledTime >= _saveAt)
+            {
+                _dirty = false; _saveAt = -1f;
+                Save();
+            }
+            if (_restackAt < 0f || Time.unscaledTime < _restackAt) return;
+            _restackAt = -1f;
+            if (!Contracts.Enabled || RecipeIcons.CurrentTab != Contracts.TabId) return;
+            try
+            {
+                var conn = NetworkConnection.Instance;
+                if (conn == null || !conn.IsConnected()) return;
+                conn.SendRequest(new GetTabContentRequest(Contracts.AllTab, (int)EThingContextWindow.WINDOW_INVENTORY));
+                Plugin.Trace("[contracts] перестраиваю вкладку — узнали новые номера");
+            }
+            catch { }
+        }
+
+        internal static void SyncAll()
+        {
+            for (int i = Live.Count - 1; i >= 0; i--)
+            {
+                if (Live[i] == null) { Live.RemoveAt(i); continue; }
+                Sync(Live[i]);
+            }
+        }
+
+        internal static void Sync(InventoryThingItemRenderer r)
+        {
+            if (r == null) return;
+            try { Draw(r, Enabled ? Number(r.Data) : null); }
+            catch (Exception e) { Plugin.Log?.LogError("[contracts] номер на клетке: " + e.Message); }
+        }
+
+        private static string Number(InventoryThingTabContentDto d)
+        {
+            if (d == null) return null;
+            string name = string.IsNullOrEmpty(d.Name) ? Store.Text(d.ThingId) : d.Name;
+
+            string number = Parse(name);
+            if (number != null)
+            {
+                lock (Known) Known[d.ThingId] = number;
+                return number;
+            }
+            lock (Known)
+                if (Known.TryGetValue(d.ThingId, out var known)) return known;
+
+            if (Contracts.IsContract(d.ThingId, name)) Search.AskNow(d.ThingId);
+            return null;
+        }
+
+        private static void Refresh(int thingId)
+        {
+            for (int i = Live.Count - 1; i >= 0; i--)
+            {
+                var r = Live[i];
+                if (r == null) { Live.RemoveAt(i); continue; }
+                var d = r.Data;
+                if (d != null && d.ThingId == thingId) Sync(r);
+            }
+        }
+
+        private static void Draw(InventoryThingItemRenderer r, string number)
+        {
+            var badge = r.transform.Find(BadgeName);
+            if (badge == null)
+            {
+                if (number == null) return;
+                badge = Build(r);
+                if (badge == null) return;
+            }
+
+            if (number != null)
+            {
+                var txt = badge.GetComponent<Text>();
+                if (txt != null && txt.text != number) txt.text = number;
+
+                if (badge.parent != null && badge.GetSiblingIndex() != badge.parent.childCount - 1)
+                    badge.SetAsLastSibling();
+            }
+            if (badge.gameObject.activeSelf != (number != null)) badge.gameObject.SetActive(number != null);
+        }
+
+        private static Transform Build(InventoryThingItemRenderer r)
+        {
+            var cell = r.transform as RectTransform;
+            if (cell == null) return null;
+
+            var countText = AccessTools.Field(typeof(InventoryThingItemRenderer), "CountText")?.GetValue(r) as Text;
+            var font = countText != null ? countText.font : null;
+            if (font == null) return null;
+
+            int size = cell.rect.height > 1f
+                     ? Mathf.Clamp(Mathf.RoundToInt(cell.rect.height * 0.3f), 11, 22)
+                     : Mathf.Max(11, countText.fontSize);
+
+            var go = new GameObject(BadgeName, typeof(RectTransform));
+            go.layer = cell.gameObject.layer;
+            go.transform.SetParent(cell, worldPositionStays: false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.offsetMin = new Vector2(3f, 3f);
+            rt.offsetMax = new Vector2(-3f, -3f);
+            rt.localScale = Vector3.one;
+
+            var txt = go.AddComponent<Text>();
+            txt.font = font;
+            txt.fontSize = size;
+            txt.fontStyle = FontStyle.Bold;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            txt.verticalOverflow = VerticalWrapMode.Overflow;
+            txt.color = new Color(1f, 0.93f, 0.55f);
+            txt.raycastTarget = false;
+            txt.text = "";
+
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.95f);
+            outline.effectDistance = new Vector2(1.2f, -1.2f);
+
+            rt.SetAsLastSibling();
+            return rt;
+        }
+    }
+
+    [HarmonyPatch(typeof(InventoryThingTabContentDto), "CompareTo")]
+    public static class ContractOrderPatch
+    {
+        private static bool Prefix(InventoryThingTabContentDto __instance, InventoryThingTabContentDto other, ref int __result)
+        {
+            try
+            {
+                if (other == null || !ContractNumbers.Enabled) return true;
+                int mine = ContractNumbers.Order(__instance.ThingId, __instance.Name);
+                int theirs = ContractNumbers.Order(other.ThingId, other.Name);
+                if (mine == int.MaxValue || theirs == int.MaxValue) return true;
+
+                __result = mine != theirs ? mine.CompareTo(theirs)
+                                          : __instance.ThingId.CompareTo(other.ThingId);
+                return false;
+            }
+            catch { return true; }
         }
     }
 
@@ -429,13 +698,25 @@ namespace NewAgeQoL
                 if (content.WindowId != (int)EThingContextWindow.WINDOW_INVENTORY) return;
 
                 RecipeIcons.CurrentTab = __instance.CurrentTab;
-                foreach (var t in content.Things) if (Contracts.IsContract(t)) { Contracts.LearnIcon(t); break; }
+                SlotSwap.LearnTabs(content);
+                foreach (var t in content.Things)
+                {
+                    if (!Contracts.IsContract(t)) continue;
+                    Contracts.LearnIcon(t);
+                    ContractNumbers.Learn(t.ThingId, t.Name);
+                    ContractNumbers.Ask(t.ThingId);
+                }
                 if (!Contracts.Enabled) return;
 
                 if (__instance.CurrentTab == Contracts.TabId && content.TabNumber == Contracts.AllTab)
                 {
-                    content.Things = content.Things.Where(Contracts.IsContract).ToList();
+
+                    var mine = content.Things.Where(Contracts.IsContract).ToList();
+                    content.Things = mine.OrderBy(t => ContractNumbers.Order(t.ThingId, t.Name))
+                                         .ThenBy(t => t.ThingId)
+                                         .ToList();
                     content.TabNumber = Contracts.TabId;
+                    Plugin.Trace("[contracts] вкладка: " + mine.Count + " шт.");
                     return;
                 }
                 if (content.TabNumber == Contracts.AllTab || content.TabNumber == Contracts.TabId) return;

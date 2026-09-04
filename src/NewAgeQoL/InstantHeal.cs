@@ -49,9 +49,6 @@ namespace NewAgeQoL
                     default: was = indicators.CurrentStamina; max = indicators.MaxStamina; break;
                 }
 
-                // Выше настоящего предела не поднимаем и полную полосу не трогаем: игровые проверки читают
-                // это же значение, и мнимый запас уводил бы их в решения, которых при честном счёте не бывает
-                // (именно так открывалось и закрывалось окно докупки зарядов, пока летел ответ с ценой).
                 if (max <= 0 || was >= max) return;
                 int now = was + item.life;
                 if (now > max) now = max;

@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.1.0")]
+    [BepInPlugin(Guid, "New Age QoL", "1.2.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -15,7 +15,13 @@ namespace NewAgeQoL
 
         internal static ConfigEntry<bool> CfgTownButton;
         internal static ConfigEntry<bool> CfgArtifactButtons;
+        internal static ConfigEntry<bool> CfgTownTournament;
+        internal static ConfigEntry<int> CfgTownArenaId;
+        internal static ConfigEntry<int> CfgTownTournamentId;
+        internal static ConfigEntry<string> CfgTownArenaWords;
+        internal static ConfigEntry<string> CfgTownTournamentWords;
         internal static ConfigEntry<bool> CfgContractsTab;
+        internal static ConfigEntry<bool> CfgContractNumbers;
         internal static ConfigEntry<bool> CfgRecipeIcons;
         internal static ConfigEntry<bool> CfgSearch;
         internal static ConfigEntry<bool> CfgChatHighlight;
@@ -23,6 +29,7 @@ namespace NewAgeQoL
         internal static ConfigEntry<int> CfgContractsTabId;
         internal static ConfigEntry<int> CfgContractsIcon;
         internal static ConfigEntry<string> CfgContractsIconImage;
+        internal static ConfigEntry<string> CfgContractCache;
         internal static ConfigEntry<string> CfgRecipeIconTabs;
         internal static ConfigEntry<bool> CfgFlaskButtons;
         internal static ConfigEntry<bool> CfgFlaskFillToMax;
@@ -35,8 +42,21 @@ namespace NewAgeQoL
         internal static ConfigEntry<string> CfgFlaskEnergyName;
         internal static ConfigEntry<string> CfgFlaskMushroomName;
         internal static ConfigEntry<bool> CfgItemIds;
+        internal static ConfigEntry<bool> CfgSlotSwap;
         internal static ConfigEntry<bool> CfgInstantRestore;
         internal static ConfigEntry<bool> CfgVerbose;
+        internal static ConfigEntry<bool> CfgTravelButton;
+        internal static ConfigEntry<string> CfgTravelSpots;
+        internal static ConfigEntry<string> CfgTravelGates;
+        internal static ConfigEntry<int> CfgTravelTown;
+        internal static ConfigEntry<int> CfgTravelOuter;
+        internal static ConfigEntry<bool> CfgMapLabels;
+        internal static ConfigEntry<bool> CfgMapLabelType;
+        internal static ConfigEntry<bool> CfgMapLabelBillboard;
+        internal static ConfigEntry<float> CfgMapLabelSize;
+        internal static ConfigEntry<int> CfgMapLabelFont;
+        internal static ConfigEntry<float> CfgMapLabelLift;
+        internal static ConfigEntry<string> CfgMapLabelColor;
 
         private void Awake()
         {
@@ -45,6 +65,17 @@ namespace NewAgeQoL
 
             CfgTownButton = Config.Bind("Town", "ShowButton", true,
                 "Показывать кнопку возврата в Иллениум слева внизу, над кнопкой сумки. В бою кнопка скрыта.");
+
+            CfgTownTournament = Config.Bind("Town", "ButtonGoesToTournament", false,
+                "Кнопка возврата ведёт дальше города: сама зайдёт на арену и оттуда к турнирам. Это поведение ТОЛЬКО у кнопки: артефакты и поход, когда им нужен город, возвращаются просто в город.");
+            CfgTownArenaId = Config.Bind("Town", "ArenaDoorId", 0,
+                "id двери арены в городе. 0 — искать дверь по слову из ArenaDoorWords.");
+            CfgTownTournamentId = Config.Bind("Town", "TournamentDoorId", 0,
+                "id двери турниров на арене. 0 — искать дверь по слову из TournamentDoorWords.");
+            CfgTownArenaWords = Config.Bind("Town", "ArenaDoorWords", "aren,арен",
+                "Слова, по которым мод узнаёт дверь арены среди дверей города (через запятую, регистр не важен). Если не нашлась, полный список дверей с их id пишется в лог.");
+            CfgTownTournamentWords = Config.Bind("Town", "TournamentDoorWords", "tourn,турнир",
+                "Слова, по которым мод узнаёт дверь турниров на арене. Если не нашлась, список дверей с их id пишется в лог.");
 
             CfgArtifactButtons = Config.Bind("Town", "ArtifactButtons", true,
                 "Показывать над кнопкой города кнопку артефактов. Пока вещи на руках, она сдаёт их в хранилище, после этого меняет картинку и забирает обратно. Мод сам доходит до банка и хранилища, пропуская пройденные шаги.");
@@ -57,6 +88,11 @@ namespace NewAgeQoL
                 "Запасная картинка вкладки «Контракты» — номер чужой вкладки, у которой её одолжить, пока мод не увидел ни одного контракта.");
             CfgContractsIconImage = Config.Bind("Inventory", "ContractsTabIconImage", "",
                 "Картинка предмета-контракта для вкладки. Заполняется сама при первом увиденном контракте.");
+            CfgContractNumbers = Config.Bind("Inventory", "ContractNumbers", true,
+                "Писать номер контракта или договора прямо посреди его клетки: «Контракт 217» → 217, «Договор 20» → 20. Работает в любой вкладке, где предмет лежит, и не зависит от того, включена ли отдельная вкладка «Контракты».");
+            CfgContractNumbers.SettingChanged += (s, e) => ContractNumbers.SyncAll();
+            CfgContractCache = Config.Bind("Inventory", "ContractNumberCache", "",
+                "Узнанные номера контрактов в виде «id:номер» через запятую. Заполняется сама и нужна, чтобы вкладка «Контракты» сразу открывалась по порядку, не дожидаясь названий с сервера.");
 
             CfgFlaskButtons = Config.Bind("Flasks", "ShowButtons", true,
                 "Показывать справа от кнопок города и артефактов столбик банок: жизнь, мана, энергия, грибы. Кнопка появляется только у той банки, которой задан предмет — id или название. В бою столбик скрыт: это ВНЕбоевые банки.");
@@ -82,6 +118,48 @@ namespace NewAgeQoL
             CfgInstantRestore = Config.Bind("Combat", "InstantRestore", true,
                 "В бою засчитывать любое ПОПОЛНЕНИЕ (жизнь, мана, энергия, заряды) сразу, как пришёл ответ сервера, не дожидаясь анимации: выпил расходник — можно тут же жать умение, приём или каст. Игра держит прибавку внутри очереди анимаций, и до её конца её же проверки считают, что ресурса ещё нет. Урон и любые списания не трогаются — они как были, по анимации.");
 
+            CfgTravelButton = Config.Bind("Travel", "ShowButton", true,
+                "Кнопка похода со списком точек: мод сам вернётся в город, выйдет во внешний мир и доведёт до выбранной точки. Дорогу видно строкой рядом с кнопкой, повторное нажатие пункта останавливает поход.");
+            CfgTravelSpots = Config.Bind("Travel", "Spots",
+                "Скорпионы@1002:19, Баньши@1002:52, Сокрушители@1002:38, Тигры@1002:21, Зомби@1002:51, Ифриты@1002:34, "
+                + "Рыцари смерти@1003:47, Наги@1003:63, Сатиры@1003:31, "
+                + "Дриады@1005:19, Миносы@1005:57, Личи@1005:41",
+                "Пункты списка: «название@участок:вершина» через запятую, в том порядке, в каком они нужны. Номер вершины — тот же, что мод подписывает на карте, а участок нужен потому, что номера у участков свои. Дорогу на другой участок мод прокладывает сам по разделу Gates. Участок можно и не писать («Руины:60») — тогда мод ищет вершину на той карте, где стоишь.");
+            CfgTravelGates = Config.Bind("Travel", "Gates",
+                "1002>1003:64, 1003>1002:15, 1002>1011:79, 1011>1002:0, 1011>1005:35, 1005>1011:0",
+                "Переходы между участками: «откуда>куда:вершина». По ним мод сам прокладывает дорогу к нужному участку, хоть через несколько переходов, и подтверждает каждый за игрока. 1002>1011:79 — с внешнего мира на соседний участок через v79, обратно — через v0.");
+
+            Upgrade(CfgTravelSpots,
+                "Скорпионы:19, Баньши:52, Сокрушители:38, Тигры:21, Зомби:51, Ифриты:34",
+                "Скорпионы@1002:19, Баньши@1002:52, Сокрушители@1002:38, Тигры@1002:21, Зомби@1002:51, Ифриты@1002:34, "
+                + "Рыцари смерти@1003:47, Наги@1003:63, Сатиры@1003:31");
+            Upgrade(CfgTravelGates, "1002>1003:64, 1003>1002:15");
+            CfgTravelTown = Config.Bind("Travel", "TownLocation", 2,
+                "id города, из которого начинается поход. 2 — Иллениум.");
+            CfgTravelOuter = Config.Bind("Travel", "OuterWorldLocation", 1002,
+                "id участка карты, куда выводит выход из этого города. 1002 — внешний мир вокруг Иллениума.");
+
+            CfgMapLabels = Config.Bind("Map", "VertexLabels", false,
+                "Подписывать точки внешнего мира их номером: «v12». По номеру видно, куда ведёт дорога, им удобно объяснять маршрут другим и задавать точки в списке похода.");
+            CfgMapLabelType = Config.Bind("Map", "VertexLabelType", false,
+                "Дописывать к номеру, что это за точка: «бой», «переход» (сохранение, вход в город или на соседний участок) или «дорога».");
+            CfgMapLabelBillboard = Config.Bind("Map", "VertexLabelBillboard", true,
+                "Держать метку повёрнутой к камере, чтобы она читалась при любом наклоне карты.");
+            CfgMapLabelSize = Config.Bind("Map", "VertexLabelSize", 0.08f,
+                "Размер буквы метки в мировых единицах. Больше — крупнее подпись на карте.");
+            CfgMapLabelFont = Config.Bind("Map", "VertexLabelSharpness", 48,
+                "Разрешение шрифта метки. Влияет на чёткость, а не на размер.");
+            CfgMapLabelLift = Config.Bind("Map", "VertexLabelLift", 0.7f,
+                "Насколько поднять метку над точкой, чтобы она не легла на саму иконку.");
+            CfgMapLabelColor = Config.Bind("Map", "VertexLabelColor", "#FFEE00",
+                "Цвет метки в виде #RRGGBB.");
+
+            Config.SettingChanged += (s, e) =>
+            {
+                if (e.ChangedSetting == null) return;
+                if (e.ChangedSetting.Definition.Section == "Map") MapLabels.Refresh();
+            };
+
             CfgChatHighlight = Config.Bind("Chat", "HighlightOwnLines", true,
                 "В системном логе целиком красить зелёным те строки, где встречается твой ник. Свои события видно сразу, чужие не отвлекают.");
 
@@ -95,6 +173,9 @@ namespace NewAgeQoL
                 "В сумке рисовать у рецепта иконку той вещи, которую он создаёт, вместо одинакового свитка. В левом верхнем углу клетки остаётся маленький значок рецепта.");
             CfgRecipeIconTabs = Config.Bind("Inventory", "RecipeIconTabs", "5,15,17,22",
                 "Номера вкладок, где рецепт показывается иконкой создаваемой вещи.");
+
+            CfgSlotSwap = Config.Bind("Inventory", "SlotSwapButtons", true,
+                "В окне снаряжения кнопки «⇄» у оружия и реликвий: меняют местами надетое с тем, что лежит в запасных слотах. То же, что приёмы «Смена оружия» и «Смена реликвий» в бою, только вне боя и без перетаскивания.");
 
             CfgItemIds = Config.Bind("Inventory", "ShowThingIds", true,
                 "У вещей, используемых ВНЕ боя (зелья, прочие внебоевые расходники, руны), дописывать к названию id в скобках: «Зелье здоровья (427)». Этот id вставляется в настройки банок. Боевые расходники, снаряжение и рецепты не трогаются, на рынке id не показывается.");
@@ -117,7 +198,13 @@ namespace NewAgeQoL
             Log.LogInfo("New Age QoL загружен.");
         }
 
-        // Подробности пишем только по просьбе: в обычной игре лог не растёт.
+        private static void Upgrade(ConfigEntry<string> cfg, params string[] wasBefore)
+        {
+            if (cfg == null) return;
+            foreach (var old in wasBefore)
+                if (cfg.Value == old) { cfg.Value = (string)cfg.DefaultValue; return; }
+        }
+
         internal static void Trace(string text)
         {
             if (CfgVerbose != null && CfgVerbose.Value) Log?.LogInfo(text);
@@ -128,6 +215,8 @@ namespace NewAgeQoL
             SideButtons.Tick();
             Flasks.Tick();
             Settings.Tick();
+            SlotSwap.Tick();
+            ContractNumbers.Tick();
             Search.Tick();
         }
     }

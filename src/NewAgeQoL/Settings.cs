@@ -39,6 +39,7 @@ namespace NewAgeQoL
             {
                 new Header { Title = "Кнопки" },
                 B("Кнопка возврата в Иллениум", Plugin.CfgTownButton),
+                B("Возврат в Иллениум ведёт на арену, к турнирам", Plugin.CfgTownTournament),
                 B("Кнопка артефактов", Plugin.CfgArtifactButtons),
 
                 new Header { Title = "Банки" },
@@ -52,10 +53,17 @@ namespace NewAgeQoL
                 new Header { Title = "Бой" },
                 B("Пополнение без ожидания анимаций", Plugin.CfgInstantRestore),
 
+                new Header { Title = "Карта" },
+                B("Номера точек внешнего мира", Plugin.CfgMapLabels),
+                B("Подписывать, что это за точка", Plugin.CfgMapLabelType),
+                F("Размер номера точки", Plugin.CfgMapLabelSize),
+
                 new Header { Title = "Инвентарь" },
                 B("Иконка вещи у рецепта", Plugin.CfgRecipeIcons),
                 B("id предмета в названии", Plugin.CfgItemIds),
+                B("Кнопки смены комплекта в снаряжении", Plugin.CfgSlotSwap),
                 B("Вкладка «Контракты»", Plugin.CfgContractsTab),
+                B("Номер на контракте и договоре", Plugin.CfgContractNumbers),
                 B("Поиск в сумке", Plugin.CfgSearch),
                 B("Свои строки в логе зелёным", Plugin.CfgChatHighlight),
             };
@@ -136,6 +144,7 @@ namespace NewAgeQoL
             if (revert) foreach (var u in _undo) { try { u(); } catch { } }
             if (_win != null) UnityEngine.Object.Destroy(_win);
             _win = null;
+            _frame = null;
             _refresh.Clear();
             _reset.Clear();
             _undo.Clear();
@@ -178,7 +187,8 @@ namespace NewAgeQoL
 
             if (caption != null) caption.text = "Настройки мода";
 
-            Widen(dlg, 220f);
+            Widen(dlg, 380f);
+            Indent(container as RectTransform, 20f);
 
             if (okButton != null)
             {
@@ -206,24 +216,70 @@ namespace NewAgeQoL
             if (Plugin.Instance != null) Plugin.Instance.StartCoroutine(ScrollTopNextFrame(scroll));
         }
 
-        // Подписи у нас длиннее игровых («Пополнение без ожидания анимаций»), в исходную ширину окна
-        // они не помещаются и упираются в края. Раздвигаем окно и всё, что не тянется само.
-        private static void Widen(HotkeysDialog dlg, float extra)
+        private static void Indent(RectTransform list, float pad)
         {
             try
             {
-                var rt = dlg.transform as RectTransform;
-                if (rt == null) return;
-                Grow(rt, extra);
-                foreach (RectTransform child in rt)
-                    if (Mathf.Abs(child.anchorMax.x - child.anchorMin.x) < 0.01f) Grow(child, extra);
+                if (list == null) return;
+                var layout = list.GetComponent<HorizontalOrVerticalLayoutGroup>();
+                if (layout != null)
+                {
+                    layout.padding.left += Mathf.RoundToInt(pad);
+                    Plugin.Trace("[settings] отступ списка слева: " + layout.padding.left);
+                    return;
+                }
+                list.offsetMin = new Vector2(list.offsetMin.x + pad, list.offsetMin.y);
+                Plugin.Trace("[settings] отступ списка сдвигом: " + list.offsetMin.x);
+            }
+            catch (Exception e) { Plugin.Log?.LogError("[settings] отступ списка: " + e.Message); }
+        }
+
+        private static RectTransform _frame;
+        private static float _extra, _wantWidth;
+
+        private static void Widen(HotkeysDialog dlg, float extra)
+        {
+            _frame = dlg.transform as RectTransform;
+            _extra = extra;
+            _wantWidth = 0f;
+            Stretch();
+        }
+
+        private static void Stretch()
+        {
+            try
+            {
+                if (_frame == null) return;
+                float now = _frame.rect.width;
+                if (now < 50f) return;
+                if (_wantWidth <= 0f) _wantWidth = now + _extra;
+
+                float need = _wantWidth - now;
+                if (Mathf.Abs(need) < 1f) return;
+
+                var fitter = _frame.GetComponent<ContentSizeFitter>();
+                if (fitter != null) fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+                var element = _frame.GetComponent<LayoutElement>();
+                if (element != null) { element.preferredWidth = _wantWidth; element.minWidth = _wantWidth; }
+
+                Grow(_frame, need, self: true);
+                foreach (RectTransform child in _frame) Grow(child, need, self: false);
+                Plugin.Trace("[settings] ширина окна " + now + " → " + _frame.rect.width
+                             + " (хотим " + _wantWidth + ")");
             }
             catch (Exception e) { Plugin.Log?.LogError("[settings] ширина окна: " + e.Message); }
         }
 
-        private static void Grow(RectTransform rt, float extra)
+        private static void Grow(RectTransform rt, float extra, bool self)
         {
-            if (Mathf.Abs(rt.anchorMax.x - rt.anchorMin.x) > 0.01f) return;
+            bool stretched = Mathf.Abs(rt.anchorMax.x - rt.anchorMin.x) > 0.01f;
+            if (stretched)
+            {
+                if (!self) return;
+                rt.offsetMin = new Vector2(rt.offsetMin.x - extra * 0.5f, rt.offsetMin.y);
+                rt.offsetMax = new Vector2(rt.offsetMax.x + extra * 0.5f, rt.offsetMax.y);
+                return;
+            }
             rt.sizeDelta = new Vector2(rt.sizeDelta.x + extra, rt.sizeDelta.y);
         }
 
@@ -253,9 +309,23 @@ namespace NewAgeQoL
                     label.resizeTextForBestFit = true;
                     label.resizeTextMaxSize = label.fontSize;
                     label.resizeTextMinSize = 8;
+
+                    label.alignment = TextAnchor.MiddleLeft;
                     var lrt = label.rectTransform;
-                    lrt.offsetMin = new Vector2(lrt.offsetMin.x + 34f, lrt.offsetMin.y);
-                    lrt.offsetMax = new Vector2(lrt.offsetMax.x + 20f, lrt.offsetMax.y);
+                    const float pad = 34f;
+                    if (Mathf.Abs(lrt.anchorMax.x - lrt.anchorMin.x) > 0.01f)
+                    {
+                        lrt.offsetMin = new Vector2(lrt.offsetMin.x + pad, lrt.offsetMin.y);
+                        lrt.offsetMax = new Vector2(lrt.offsetMax.x + pad * 0.25f, lrt.offsetMax.y);
+                    }
+                    else
+                    {
+                        lrt.anchoredPosition = new Vector2(lrt.anchoredPosition.x + pad, lrt.anchoredPosition.y);
+                    }
+                    Plugin.Trace("[settings] подпись «" + def.Title + "» якоря "
+                                 + lrt.anchorMin.x + ".." + lrt.anchorMax.x
+                                 + " отступы " + lrt.offsetMin.x + ".." + lrt.offsetMax.x
+                                 + " позиция " + lrt.anchoredPosition.x);
                 }
             }
 
@@ -345,6 +415,7 @@ namespace NewAgeQoL
 
         internal static void Tick()
         {
+            if (_win != null) Stretch();
             if (_captureCfg == null) return;
             if (_win == null) { _captureCfg = null; _captureText = null; return; }
             if (!Input.anyKeyDown) return;
