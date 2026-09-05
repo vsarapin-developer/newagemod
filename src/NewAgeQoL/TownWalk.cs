@@ -6,7 +6,6 @@ using UnityEngine;
 
 namespace NewAgeQoL
 {
-
     internal static class TownWalk
     {
         internal static bool Busy { get; private set; }

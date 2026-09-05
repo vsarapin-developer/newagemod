@@ -710,7 +710,6 @@ namespace NewAgeQoL
 
                 if (__instance.CurrentTab == Contracts.TabId && content.TabNumber == Contracts.AllTab)
                 {
-
                     var mine = content.Things.Where(Contracts.IsContract).ToList();
                     content.Things = mine.OrderBy(t => ContractNumbers.Order(t.ThingId, t.Name))
                                          .ThenBy(t => t.ThingId)

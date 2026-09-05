@@ -1,11 +1,11 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.2.0")]
+    [BepInPlugin(Guid, "New Age QoL", "1.2.1")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -25,6 +25,7 @@ namespace NewAgeQoL
         internal static ConfigEntry<bool> CfgRecipeIcons;
         internal static ConfigEntry<bool> CfgSearch;
         internal static ConfigEntry<bool> CfgChatHighlight;
+        internal static ConfigEntry<bool> CfgHideSystemBoxes;
         internal static ConfigEntry<string> CfgStash;
         internal static ConfigEntry<int> CfgContractsTabId;
         internal static ConfigEntry<int> CfgContractsIcon;
@@ -44,6 +45,10 @@ namespace NewAgeQoL
         internal static ConfigEntry<bool> CfgItemIds;
         internal static ConfigEntry<bool> CfgSlotSwap;
         internal static ConfigEntry<bool> CfgInstantRestore;
+        internal static ConfigEntry<bool> CfgCounterAuto;
+        internal static ConfigEntry<bool> CfgCounterRefresh;
+        internal static ConfigEntry<int> CfgCounterRefreshRounds;
+        internal static ConfigEntry<int> CfgCounterId;
         internal static ConfigEntry<bool> CfgVerbose;
         internal static ConfigEntry<bool> CfgTravelButton;
         internal static ConfigEntry<string> CfgTravelSpots;
@@ -116,7 +121,16 @@ namespace NewAgeQoL
                 "Название грибов, если id неизвестен. Работает, только когда MushroomThingId = 0.");
 
             CfgInstantRestore = Config.Bind("Combat", "InstantRestore", true,
-                "В бою засчитывать любое ПОПОЛНЕНИЕ (жизнь, мана, энергия, заряды) сразу, как пришёл ответ сервера, не дожидаясь анимации: выпил расходник — можно тут же жать умение, приём или каст. Игра держит прибавку внутри очереди анимаций, и до её конца её же проверки считают, что ресурса ещё нет. Урон и любые списания не трогаются — они как были, по анимации.");
+                "В бою засчитывать пополнение ОТ РАСХОДНИКОВ (жизнь, мана, энергия, заряды) сразу, как пришёл ответ сервера, не дожидаясь анимации: выпил банку — можно тут же жать умение, приём или каст. Игра держит прибавку внутри очереди анимаций, и до её конца её же проверки считают, что ресурса ещё нет. Прибавки другого происхождения — вампиризм, исцеление, регенерация — идут своим чередом, по анимации, как в обычной игре. Урон и любые списания не трогаются вовсе.");
+
+            CfgCounterAuto = Config.Bind("Combat", "CounterOnPlayers", false,
+                "Ставить контрприём на себя, когда среди врагов есть живой ИГРОК (хаотические бои, арена, нападение в мире): мобов это не касается, приёмами бьют только игроки. Заряды проверяются ОДИН раз, в начале боя: не хватало их на старте — в этом бою мод больше не лезет, даже если заряды потом пополнить. Тогда первый контрприём за тобой, руками.");
+            CfgCounterRefresh = Config.Bind("Combat", "CounterRefresh", false,
+                "Обновлять контрприём на себе в начале раунда. Счёт идёт не «каждый N-й раунд боя», а от ПОСЛЕДНЕГО применения приёма НА СЕБЯ — своего или сделанного модом: применился в 4-м раунде при интервале 2 — следующий в 6-м, нажал сам в 7-м — следующий в 9-м. Контрприёмы, поставленные на союзника, и чужие контрприёмы в счёт не идут: мод следит только за своим персонажем. Первого контрприёма обновление не делает никогда: пока приёма не было, обновлять нечего.");
+            CfgCounterRefreshRounds = Config.Bind("Combat", "CounterRefreshRounds", 3,
+                "Через сколько раундов после последнего контрприёма ставить следующий. Меньше 1 считается за 1.");
+            CfgCounterId = Config.Bind("Combat", "CounterDodgeId", 4,
+                "id приёма «Контрприем» среди приёмов. Менять не нужно: 4 — его номер в игре. Если приёма с этим номером в бою нет, мод ищет его по названию.");
 
             CfgTravelButton = Config.Bind("Travel", "ShowButton", true,
                 "Кнопка похода со списком точек: мод сам вернётся в город, выйдет во внешний мир и доведёт до выбранной точки. Дорогу видно строкой рядом с кнопкой, повторное нажатие пункта останавливает поход.");
@@ -162,6 +176,9 @@ namespace NewAgeQoL
 
             CfgChatHighlight = Config.Bind("Chat", "HighlightOwnLines", true,
                 "В системном логе целиком красить зелёным те строки, где встречается твой ник. Свои события видно сразу, чужие не отвлекают.");
+
+            CfgHideSystemBoxes = Config.Bind("Chat", "HideSystemMessageBoxes", false,
+                "Не показывать всплывающее окно «Системное сообщение» — объявления администрации и разведки посреди экрана. Сам текст никуда не девается: он приходит в чат, вкладка «Общий». Письма, которые ждут при входе в игру, окном показываются по-прежнему.");
 
             CfgStash = Config.Bind("Town", "StashedArtifacts", "",
                 "Что лежит в хранилище после сдачи, в виде «вещь;слот» через запятую. Слот 0 значит, что вещь была в сумке. Заполняется и очищается кнопкой артефактов.");
@@ -218,6 +235,7 @@ namespace NewAgeQoL
             SlotSwap.Tick();
             ContractNumbers.Tick();
             Search.Tick();
+            Counter.Tick();
         }
     }
 }

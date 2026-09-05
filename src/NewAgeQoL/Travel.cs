@@ -6,7 +6,6 @@ using UnityEngine;
 
 namespace NewAgeQoL
 {
-
     internal sealed class Spot
     {
         internal string Name;
@@ -164,7 +163,6 @@ namespace NewAgeQoL
 
                 if (spot.Area > 0)
                 {
-
                     for (int guard = 0; guard < 8 && Area != spot.Area; guard++)
                     {
                         if (_abort) yield break;
@@ -172,7 +170,6 @@ namespace NewAgeQoL
                         var road = MapReady() ? GateRoute(Area, spot.Area) : null;
                         if (road == null || road.Count == 0)
                         {
-
                             if (MapReady() && Area == Outer)
                             {
                                 Plugin.Trace("[travel] нет дороги с участка " + Area + " на " + spot.Area);
@@ -194,7 +191,6 @@ namespace NewAgeQoL
                 }
                 else
                 {
-
                     if (!HasVertex(spot.Path[0]))
                     {
                         yield return GoTown(spot);
@@ -235,7 +231,6 @@ namespace NewAgeQoL
 
             if (RefusedStamp != refused)
             {
-
                 if (RefusedAt != vertex)
                 {
                     _ok = false;

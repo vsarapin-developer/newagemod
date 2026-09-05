@@ -5,7 +5,6 @@ using UnityEngine;
 
 namespace NewAgeQoL
 {
-
     internal static class MapLabels
     {
         private const string LabelName = "QoLVertexLabel";

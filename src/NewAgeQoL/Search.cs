@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -229,14 +229,31 @@ namespace NewAgeQoL
 
         private static float _lookAt;
 
+        internal static StandardContentWindowPanel Owner;
+
+        private static void Drop()
+        {
+            if (_field != null) UnityEngine.Object.Destroy(_field.gameObject);
+            _field = null;
+            _panel = null;
+            _window = null;
+            Query = "";
+            _pending = -1f;
+        }
+
         private static void EnsureBuilt()
         {
+            if (Owner == null)
+            {
+                if (_field != null) Drop();
+                return;
+            }
             if (_field != null && _panel != null) return;
             if (Time.unscaledTime < _lookAt) return;
             _lookAt = Time.unscaledTime + 1f;
 
-            if (_field != null) { UnityEngine.Object.Destroy(_field.gameObject); _field = null; }
-            var panel = UnityEngine.Object.FindObjectOfType<InventoryPanelContent>();
+            if (_field != null) Drop();
+            var panel = Owner.GetComponentInChildren<InventoryPanelContent>(true);
             if (panel == null) return;
             Build(panel.transform as RectTransform);
         }
@@ -370,6 +387,24 @@ namespace NewAgeQoL
             Place();
             Plugin.Trace("[search] строка поиска добавлена, образец «"
                                  + (template != null ? template.name : "свой") + "»");
+        }
+    }
+
+    [HarmonyPatch(typeof(BaseInventoryThingTabPanelResolver<UserMenuController.ETabs>), "InternalActivatePanel")]
+    public static class SearchPanelOpenPatch
+    {
+        private static void Postfix(BaseInventoryThingTabPanelResolver<UserMenuController.ETabs> __instance, bool __result)
+        {
+            if (__result) Search.Owner = __instance.CurrentPanel;
+        }
+    }
+
+    [HarmonyPatch(typeof(BaseInventoryThingTabPanelResolver<UserMenuController.ETabs>), "InternalDeactivatePanel")]
+    public static class SearchPanelClosePatch
+    {
+        private static void Postfix(bool __result)
+        {
+            if (__result) Search.Owner = null;
         }
     }
 

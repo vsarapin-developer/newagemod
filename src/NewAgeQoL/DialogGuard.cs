@@ -1,8 +1,23 @@
-using System.Reflection;
+﻿using System.Reflection;
 using HarmonyLib;
+using Transport.Messages.Responses.Chat;
 
 namespace NewAgeQoL
 {
+    [HarmonyPatch(typeof(AdminMessagesController), "ShowMessage")]
+    public static class SystemMessageBoxPatch
+    {
+        private static bool Prefix(ChatResponseMessage msg)
+        {
+            try
+            {
+                if (Plugin.CfgHideSystemBoxes == null || !Plugin.CfgHideSystemBoxes.Value) return true;
+                Plugin.Trace("[системное] окно скрыто: " + (msg != null ? msg.Text : ""));
+                return false;
+            }
+            catch { return true; }
+        }
+    }
 
     [HarmonyPatch(typeof(PriceConfirmMessageBoxRefreshByNetwork), "UpdateByPriceMessage")]
     public static class PriceBoxGuardPatch

@@ -189,7 +189,11 @@ namespace NewAgeQoL
             var middle = new Vector2(0.5f, 0.5f);
             if (_panel.anchorMin != middle) _panel.anchorMin = middle;
             if (_panel.anchorMax != middle) _panel.anchorMax = middle;
-            _panel.anchoredPosition = new Vector2(x, y);
+
+            var want = new Vector2(x, y);
+            if ((_panel.anchoredPosition - want).sqrMagnitude <= 4f) return;
+            Plugin.Trace("[buttons] панель " + _panel.anchoredPosition + " → " + want);
+            _panel.anchoredPosition = want;
         }
 
         private static Rect Around(RectTransform parent)
@@ -203,10 +207,12 @@ namespace NewAgeQoL
             {
                 var rt = button.transform as RectTransform;
                 if (rt == null || rt.rect.width < 4f) continue;
-                rt.GetWorldCorners(corners);
+                var host = rt.parent as RectTransform;
+                if (host == null) continue;
+                rt.GetLocalCorners(corners);
                 for (int i = 0; i < 4; i++)
                 {
-                    Vector2 local = parent.InverseTransformPoint(corners[i]);
+                    Vector2 local = parent.InverseTransformPoint(host.TransformPoint(rt.localPosition + corners[i]));
                     if (local.x < xMin) xMin = local.x;
                     if (local.x > xMax) xMax = local.x;
                     if (local.y < yMin) yMin = local.y;

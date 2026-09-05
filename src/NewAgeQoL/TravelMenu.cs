@@ -4,7 +4,6 @@ using UnityEngine.UI;
 
 namespace NewAgeQoL
 {
-
     internal static class TravelMenu
     {
         private const float RowHeight = 30f;
@@ -109,7 +108,6 @@ namespace NewAgeQoL
             var canvas = panel.parent as RectTransform;
             if (canvas != null && canvas.rect.height > 1f)
             {
-
                 Vector2 center = canvas.InverseTransformPoint(panel.TransformPoint(panel.rect.center));
                 float limit = Mathf.Max(0f, canvas.rect.height * 0.5f - _root.sizeDelta.y * 0.5f);
                 wantY = Mathf.Clamp(center.y + wantY, -limit, limit) - center.y;

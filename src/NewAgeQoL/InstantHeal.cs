@@ -36,6 +36,14 @@ namespace NewAgeQoL
                 var target = item.Target;
                 if (target == null || target != Me()) return;
 
+                var group = item.Group;
+                if (group == null || group.actionType != ActionType.THINGEFFECT)
+                {
+                    Plugin.Trace("[combat] " + item.AnimationName + " +" + item.life + " не от расходника (действие "
+                                 + (group == null ? "?" : group.actionType.ToString()) + ") — идёт по анимации, как в игре");
+                    return;
+                }
+
                 var indicators = target.Indicators;
                 if (indicators == null) return;
 

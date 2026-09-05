@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -52,6 +52,9 @@ namespace NewAgeQoL
 
                 new Header { Title = "Бой" },
                 B("Пополнение без ожидания анимаций", Plugin.CfgInstantRestore),
+                B("Контрприём на себя, когда в бою игроки", Plugin.CfgCounterAuto),
+                B("Обновлять контрприём на себе", Plugin.CfgCounterRefresh),
+                I("Раундов между контрприёмами", Plugin.CfgCounterRefreshRounds),
 
                 new Header { Title = "Карта" },
                 B("Номера точек внешнего мира", Plugin.CfgMapLabels),
@@ -65,7 +68,10 @@ namespace NewAgeQoL
                 B("Вкладка «Контракты»", Plugin.CfgContractsTab),
                 B("Номер на контракте и договоре", Plugin.CfgContractNumbers),
                 B("Поиск в сумке", Plugin.CfgSearch),
+
+                new Header { Title = "Чат" },
                 B("Свои строки в логе зелёным", Plugin.CfgChatHighlight),
+                B("Прятать окно «Системное сообщение»", Plugin.CfgHideSystemBoxes),
             };
             rows.RemoveAll(r => r == null);
             return rows;

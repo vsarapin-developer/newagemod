@@ -9,7 +9,6 @@ using UnityEngine.UI;
 
 namespace NewAgeQoL
 {
-
     internal static class SlotSwap
     {
         private static readonly ESlots.SlotType[] MainWeapons =
