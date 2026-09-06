@@ -225,6 +225,9 @@ namespace NewAgeQoL
             var resp = m as ThingContextActionResponseMessage;
             if (resp == null) return;
 
+            if (resp.WindowId == WinSellerOffers && resp.ButtonId == RemoveFromSale && resp.Success)
+                DropOffer(resp.Id);
+
             if (!_done && resp.WindowId == WinPutOnMarket)
             {
                 if (!resp.Success)
@@ -280,6 +283,19 @@ namespace NewAgeQoL
                 _rDone = true;
                 Plugin.Trace("[рынок] снятие завершено");
                 Refresh(WinSellerOffers, _rTab);
+            }
+        }
+
+        private static void DropOffer(int offerId)
+        {
+            int tid;
+            if (!_offerThing.TryGetValue(offerId, out tid)) return;
+            _offerThing.Remove(offerId);
+            List<int> list;
+            if (_thingOffers.TryGetValue(tid, out list))
+            {
+                list.Remove(offerId);
+                if (list.Count == 0) _thingOffers.Remove(tid);
             }
         }
 
