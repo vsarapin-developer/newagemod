@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using Transport.Messages.Common.User;
 using Transport.Messages.Requests.Things.Actions;
 using Transport.Messages.Responses.Things.Actions;
+using Transport.Messages.Responses.Things.Shop;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -11,7 +13,9 @@ namespace NewAgeQoL
     internal static class Market
     {
         private const int PutOnMarket = 0x1000;
+        private const int RemoveFromSale = 0x40;
         private const int WinPutOnMarket = -103;
+        private const int WinSellerOffers = -107;
         private const int MaxLots = 999;
 
         private static bool Enabled => Plugin.CfgMarketMultiLot == null || Plugin.CfgMarketMultiLot.Value;
@@ -25,6 +29,14 @@ namespace NewAgeQoL
         private static float _talls, _gold;
         private static bool _single;
 
+        private static readonly Dictionary<int, int> _offerThing = new Dictionary<int, int>();
+        private static readonly Dictionary<int, List<int>> _thingOffers = new Dictionary<int, List<int>>();
+        private static int _removeLots = 1;
+        private static int _removeCap = 1;
+        private static bool _rDone = true;
+        private static int _rTab;
+        private static readonly List<int> _rQueue = new List<int>();
+
         internal static void Tick()
         {
             try { Listen(); }
@@ -37,8 +49,29 @@ namespace NewAgeQoL
             if (nc == null || !nc.IsConnected()) { _on = null; return; }
             if (ReferenceEquals(_on, nc)) return;
             nc.RemoveMessageListener(416, OnResult);
+            nc.RemoveMessageListener(102, OnOffers);
             nc.AddMessageListener(416, OnResult);
+            nc.AddMessageListener(102, OnOffers);
             _on = nc;
+        }
+
+        private static void OnOffers(object m)
+        {
+            var msg = m as ShopTabContentResponseMessage;
+            if (msg == null || msg.WindowId != WinSellerOffers || msg.Items == null) return;
+            _offerThing.Clear();
+            _thingOffers.Clear();
+            foreach (var it in msg.Items)
+            {
+                if (it == null || it.ThingInfo == null) continue;
+                int oid = it.ShopItemId.GetValueOrDefault();
+                if (oid == 0) continue;
+                int tid = it.ThingInfo.ThingId;
+                _offerThing[oid] = tid;
+                List<int> list;
+                if (!_thingOffers.TryGetValue(tid, out list)) { list = new List<int>(); _thingOffers[tid] = list; }
+                list.Add(oid);
+            }
         }
 
         internal static void Setup(PutOnMarketConfirmDialog dialog)
@@ -146,63 +179,151 @@ namespace NewAgeQoL
         {
             if (request == null) return;
             if (_ours) { _ours = false; return; }
-            if (!Enabled || !_done) return;
+            if (!Enabled) return;
             try
             {
                 var msg = request.GenerateMessage() as ThingContextActionRequestMessage;
-                if (msg == null || msg.ButtonId != PutOnMarket || msg.WindowId != WinPutOnMarket) return;
-                if (_lots <= 1) return;
+                if (msg == null) return;
 
-                _id = msg.Id;
-                _tab = msg.TabId;
-                _quantity = msg.Quantity.GetValueOrDefault(1);
-                _talls = msg.Cash != null ? msg.Cash.Talls.GetValueOrDefault() : 0f;
-                _gold = msg.Cash != null ? msg.Cash.Gold.GetValueOrDefault() : 0f;
-                _single = msg.SingleLot.GetValueOrDefault();
-                _remaining = _lots - 1;
-                _done = false;
-                Plugin.Trace("[рынок] лот 1/" + _lots + " ушёл, в очереди ещё " + _remaining);
+                if (_done && msg.ButtonId == PutOnMarket && msg.WindowId == WinPutOnMarket && _lots > 1)
+                {
+                    _id = msg.Id;
+                    _tab = msg.TabId;
+                    _quantity = msg.Quantity.GetValueOrDefault(1);
+                    _talls = msg.Cash != null ? msg.Cash.Talls.GetValueOrDefault() : 0f;
+                    _gold = msg.Cash != null ? msg.Cash.Gold.GetValueOrDefault() : 0f;
+                    _single = msg.SingleLot.GetValueOrDefault();
+                    _remaining = _lots - 1;
+                    _done = false;
+                    Plugin.Trace("[рынок] лот 1/" + _lots + " ушёл, в очереди ещё " + _remaining);
+                    return;
+                }
+
+                if (_rDone && msg.ButtonId == RemoveFromSale && msg.WindowId == WinSellerOffers && _removeLots > 1)
+                {
+                    _rTab = msg.TabId;
+                    int tid;
+                    if (!_offerThing.TryGetValue(msg.Id, out tid)) return;
+                    List<int> all;
+                    if (!_thingOffers.TryGetValue(tid, out all)) return;
+                    _rQueue.Clear();
+                    foreach (int oid in all)
+                    {
+                        if (oid == msg.Id) continue;
+                        _rQueue.Add(oid);
+                        if (_rQueue.Count >= _removeLots - 1) break;
+                    }
+                    _rDone = false;
+                    Plugin.Trace("[рынок] снятие 1/" + _removeLots + ", в очереди ещё " + _rQueue.Count);
+                }
             }
             catch (Exception e) { Plugin.Trace("[рынок] исходящий: " + e.Message); }
         }
 
         private static void OnResult(object m)
         {
-            if (_done) return;
             var resp = m as ThingContextActionResponseMessage;
-            if (resp == null || resp.WindowId != WinPutOnMarket) return;
-            if (!resp.Success)
-            {
-                Plugin.Trace("[рынок] сервер отказал, остановка: " + resp.ErrorMessage);
-                _done = true;
-                _remaining = 0;
-                Refresh();
-                return;
-            }
+            if (resp == null) return;
 
-            if (_remaining > 0)
+            if (!_done && resp.WindowId == WinPutOnMarket)
             {
-                _remaining--;
-                try
+                if (!resp.Success)
                 {
-                    _ours = true;
-                    var req = new ContextActionRequest(_id, PutOnMarket, WinPutOnMarket, _tab, _quantity, _talls, _gold, _single, 0);
-                    NetworkConnection.Instance.SendRequest(req);
-                    Plugin.Trace("[рынок] лот " + (_lots - _remaining) + "/" + _lots + " ушёл");
+                    Plugin.Trace("[рынок] сервер отказал, остановка: " + resp.ErrorMessage);
+                    _done = true;
+                    _remaining = 0;
+                    Refresh(WinPutOnMarket, _tab);
+                    return;
                 }
-                catch (Exception e) { _ours = false; _done = true; _remaining = 0; Plugin.Log?.LogError("[рынок] отправка лота: " + e.Message); Refresh(); }
+                if (_remaining > 0)
+                {
+                    _remaining--;
+                    try
+                    {
+                        _ours = true;
+                        var req = new ContextActionRequest(_id, PutOnMarket, WinPutOnMarket, _tab, _quantity, _talls, _gold, _single, 0);
+                        NetworkConnection.Instance.SendRequest(req);
+                        Plugin.Trace("[рынок] лот " + (_lots - _remaining) + "/" + _lots + " ушёл");
+                    }
+                    catch (Exception e) { _ours = false; _done = true; _remaining = 0; Plugin.Log?.LogError("[рынок] отправка лота: " + e.Message); Refresh(WinPutOnMarket, _tab); }
+                    return;
+                }
+                _done = true;
+                Plugin.Trace("[рынок] все " + _lots + " лотов выставлены");
+                Refresh(WinPutOnMarket, _tab);
                 return;
             }
 
-            _done = true;
-            Plugin.Trace("[рынок] все " + _lots + " лотов выставлены");
-            Refresh();
+            if (!_rDone && resp.WindowId == WinSellerOffers)
+            {
+                if (!resp.Success)
+                {
+                    Plugin.Trace("[рынок] снятие: сервер отказал, остановка: " + resp.ErrorMessage);
+                    _rDone = true;
+                    _rQueue.Clear();
+                    Refresh(WinSellerOffers, _rTab);
+                    return;
+                }
+                if (_rQueue.Count > 0)
+                {
+                    int nextId = _rQueue[0];
+                    _rQueue.RemoveAt(0);
+                    try
+                    {
+                        _ours = true;
+                        NetworkConnection.Instance.SendRequest(new ContextActionRequest(nextId, RemoveFromSale, WinSellerOffers, _rTab, null));
+                        Plugin.Trace("[рынок] снят лот, в очереди ещё " + _rQueue.Count);
+                    }
+                    catch (Exception e) { _ours = false; _rDone = true; _rQueue.Clear(); Plugin.Log?.LogError("[рынок] снятие лота: " + e.Message); Refresh(WinSellerOffers, _rTab); }
+                    return;
+                }
+                _rDone = true;
+                Plugin.Trace("[рынок] снятие завершено");
+                Refresh(WinSellerOffers, _rTab);
+            }
         }
 
-        private static void Refresh()
+        private static void Refresh(int window, int tab)
         {
-            try { NetworkConnection.Instance.SendRequest(new GetTabContentRequest(_tab, WinPutOnMarket)); }
+            try { NetworkConnection.Instance.SendRequest(new GetTabContentRequest(tab, window)); }
             catch (Exception e) { Plugin.Trace("[рынок] обновление вкладки: " + e.Message); }
+        }
+
+        internal static void SetupRemove(ThingHintDialog dialog)
+        {
+            _removeLots = 1;
+            _removeCap = 1;
+            _rDone = true;
+            if (!Enabled || dialog == null) return;
+            try
+            {
+                if (dialog.ContextWindow != (EThingContextWindow)WinSellerOffers) return;
+
+                int offerId = (int)(AccessTools.Field(typeof(ThingHintDialog), "Id")?.GetValue(dialog) ?? 0);
+                int tid;
+                if (offerId == 0 || !_offerThing.TryGetValue(offerId, out tid)) return;
+                List<int> all;
+                int cap = _thingOffers.TryGetValue(tid, out all) ? all.Count : 1;
+                if (cap <= 1) return;
+                _removeCap = cap;
+
+                var qty = AccessTools.Field(typeof(ThingHintDialog), "quantityInputField")?.GetValue(dialog) as IntegerInputField;
+                if (qty == null) return;
+
+                var go = UnityEngine.Object.Instantiate(qty.gameObject, qty.transform.parent);
+                go.name = "QoLRemoveLotsField";
+                go.transform.SetSiblingIndex(qty.transform.GetSiblingIndex() + 1);
+                go.SetActive(true);
+                var wrap = qty.transform.parent as RectTransform;
+                if (wrap != null && !wrap.gameObject.activeSelf) wrap.gameObject.SetActive(true);
+
+                var field = go.GetComponent<IntegerInputField>();
+                field.OnValueChanged = new IntegerInputField.OnValueChangedEvent();
+                field.OnValueChanged.AddListener(v => _removeLots = v < 1 ? 1 : (v > _removeCap ? _removeCap : v));
+                field.Initialize("Снять лотов", 1, cap, 1);
+                LayoutRebuilder.MarkLayoutForRebuild(qty.transform.parent as RectTransform);
+            }
+            catch (Exception e) { Plugin.Log?.LogWarning("[рынок] поле снятия не добавлено: " + e.Message); }
         }
     }
 
@@ -210,6 +331,12 @@ namespace NewAgeQoL
     public static class MarketDialogPatch
     {
         private static void Postfix(PutOnMarketConfirmDialog __instance) => Market.Setup(__instance);
+    }
+
+    [HarmonyPatch(typeof(ThingHintDialog), "FillInventoryThingFields")]
+    public static class MarketRemoveDialogPatch
+    {
+        private static void Postfix(ThingHintDialog __instance) => Market.SetupRemove(__instance);
     }
 
     [HarmonyPatch(typeof(NetworkConnection), "SendRequest", new[] { typeof(BaseRequest) })]
