@@ -146,9 +146,10 @@ namespace NewAgeQoL
             return head + " — " + (wantFill ? "до полного" : "не до полного");
         }
 
-        internal static Sprite Icon(int row)
+        internal static Sprite Icon(int row) => IconFor(Thing(row));
+
+        internal static Sprite IconFor(int id)
         {
-            int id = Thing(row);
             if (id <= 0) return Fallback();
 
             string image;
@@ -169,6 +170,35 @@ namespace NewAgeQoL
             catch { }
             LoadRemote(image);
             return Fallback();
+        }
+
+        internal static List<int> ConsumableThings()
+        {
+            var seen = new HashSet<int>();
+            var list = new List<int>();
+            lock (Scanned)
+                foreach (var s in Scanned)
+                    if (Consumable(s.SubType) && s.Qty > 0 && seen.Add(s.ThingId))
+                        list.Add(s.ThingId);
+            return list;
+        }
+
+        internal static int QtyOf(int thingId)
+        {
+            int q = 0;
+            lock (Scanned) foreach (var s in Scanned) if (s.ThingId == thingId) q += s.Qty;
+            return q;
+        }
+
+        internal static string DisplayName(int thingId)
+        {
+            string n = NameOf(thingId);
+            return string.IsNullOrEmpty(n) ? null : Plain(n, thingId);
+        }
+
+        internal static void RequestScan()
+        {
+            _nextScan = 0f;
         }
 
         private static Sprite Fallback()

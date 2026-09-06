@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.3.3")]
+    [BepInPlugin(Guid, "New Age QoL", "1.4.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -240,6 +240,7 @@ namespace NewAgeQoL
             Search.Tick();
             Counter.Tick();
             Market.Tick();
+            FlaskPicker.Tick();
         }
     }
 }

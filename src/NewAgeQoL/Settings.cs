@@ -25,6 +25,8 @@ namespace NewAgeQoL
 
         private sealed class KeyRow : RowDef { internal ConfigEntry<string> Cfg; }
 
+        private sealed class PickRow : RowDef { internal ConfigEntry<string> ByName; internal ConfigEntry<int> ById; internal System.Func<string> Display; }
+
         private sealed class ValueRow : RowDef
         {
             internal Func<string> Get;
@@ -45,10 +47,10 @@ namespace NewAgeQoL
                 new Header { Title = "Банки" },
                 B("Кнопки банок", Plugin.CfgFlaskButtons),
                 B("Пить до полного", Plugin.CfgFlaskFillToMax),
-                Btn("Жизнь — id или название", Plugin.CfgFlaskHpName, Plugin.CfgFlaskHpId),
-                Btn("Мана — id или название", Plugin.CfgFlaskManaName, Plugin.CfgFlaskManaId),
-                Btn("Энергия — id или название", Plugin.CfgFlaskEnergyName, Plugin.CfgFlaskEnergyId),
-                Btn("Грибы — id или название", Plugin.CfgFlaskMushroomName, Plugin.CfgFlaskMushroomId),
+                Pick("Жизнь", Plugin.CfgFlaskHpName, Plugin.CfgFlaskHpId),
+                Pick("Мана", Plugin.CfgFlaskManaName, Plugin.CfgFlaskManaId),
+                Pick("Энергия", Plugin.CfgFlaskEnergyName, Plugin.CfgFlaskEnergyId),
+                Pick("Грибы", Plugin.CfgFlaskMushroomName, Plugin.CfgFlaskMushroomId),
 
                 new Header { Title = "Бой" },
                 B("Пополнение без ожидания анимаций", Plugin.CfgInstantRestore),
@@ -82,6 +84,23 @@ namespace NewAgeQoL
 
         private static RowDef K(string title, ConfigEntry<string> cfg) =>
             cfg == null ? null : new KeyRow { Title = title, Cfg = cfg };
+
+        private static RowDef Pick(string title, ConfigEntry<string> byName, ConfigEntry<int> byId)
+        {
+            if (byName == null || byId == null) return null;
+            return new PickRow
+            {
+                Title = title,
+                ByName = byName,
+                ById = byId,
+                Display = () =>
+                {
+                    if (!string.IsNullOrEmpty(byName.Value)) return byName.Value;
+                    if (byId.Value > 0) { var n = Flasks.DisplayName(byId.Value); return n ?? byId.Value.ToString(); }
+                    return "— выбрать —";
+                },
+            };
+        }
 
         private static RowDef Btn(string title, ConfigEntry<string> byName, ConfigEntry<int> byId)
         {
@@ -392,6 +411,23 @@ namespace NewAgeQoL
                 }
                 _refresh.Add(() => SetSwitch(value, b.Cfg.Value));
                 _reset.Add(() => b.Cfg.Value = (bool)b.Cfg.DefaultValue);
+                return;
+            }
+
+            if (def is PickRow pick)
+            {
+                Remember(pick.ByName);
+                Remember(pick.ById);
+                if (value != null) value.text = pick.Display();
+                if (button != null)
+                {
+                    button.onClick.RemoveAllListeners();
+                    var val = value;
+                    button.onClick.AddListener(() => FlaskPicker.Open(pick.ByName, pick.ById, pick.Title,
+                        () => { if (val != null) val.text = pick.Display(); }));
+                }
+                _refresh.Add(() => { if (value != null) value.text = pick.Display(); });
+                _reset.Add(() => { pick.ByName.Value = (string)pick.ByName.DefaultValue; pick.ById.Value = (int)pick.ById.DefaultValue; });
                 return;
             }
 
