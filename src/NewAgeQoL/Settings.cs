@@ -69,6 +69,9 @@ namespace NewAgeQoL
                 B("Номер на контракте и договоре", Plugin.CfgContractNumbers),
                 B("Поиск в сумке", Plugin.CfgSearch),
 
+                new Header { Title = "Рынок" },
+                B("Несколько лотов на рынок за раз", Plugin.CfgMarketMultiLot),
+
                 new Header { Title = "Чат" },
                 B("Свои строки в логе зелёным", Plugin.CfgChatHighlight),
                 B("Прятать окно «Системное сообщение»", Plugin.CfgHideSystemBoxes),

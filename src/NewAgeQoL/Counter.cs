@@ -6,7 +6,7 @@ namespace NewAgeQoL
 {
     internal static class Counter
     {
-        private const float Period = 0.25f;
+        private const float Period = 0.1f;
         private const int MaxTries = 3;
 
         private const int StateType = 5;
@@ -16,7 +16,6 @@ namespace NewAgeQoL
         private static int _lastUse;
         private static int _sentRound;
         private static int _tries;
-        private static float _stateAsked;
         private static int _aimedAt;
         private static float _next;
         private static int _whyRound;
@@ -59,8 +58,8 @@ namespace NewAgeQoL
 
                 if (_lastUse == 0)
                 {
-                    if (!StatesKnown(me)) return;
-                    if (HasCounterState(me, btn.Id))
+                    var st = me.CharacterStates;
+                    if (st != null && st.Actual && HasCounterState(me, btn.Id))
                     {
                         _lastUse = round;
                         Plugin.Trace("[контрприём] уже висит на мне — первый не ставим, отсчёт с раунда " + round);
@@ -139,8 +138,9 @@ namespace NewAgeQoL
 
                 if (aimed == 0)
                 {
-                    _stateAsked = 0f;
-                    Plugin.Trace("[контрприём] применён, но цель неизвестна — перепроверим свои состояния");
+                    Plugin.Trace("[контрприём] применён, но цель неизвестна — засчитываем на себя");
+                    _lastUse = round;
+                    _tries = 0;
                     return;
                 }
                 if (aimed != me.UserId)
@@ -165,25 +165,11 @@ namespace NewAgeQoL
             _lastUse = 0;
             _sentRound = 0;
             _tries = 0;
-            _stateAsked = 0f;
             _aimedAt = 0;
             _whyRound = 0;
             _whyText = null;
             _seenPhase = 0;
             _gameRound = 0;
-        }
-
-        private static bool StatesKnown(PlayerCharacter me)
-        {
-            if (_stateAsked <= 0f)
-            {
-                try { NetworkConnection.Instance.SendRequest(new GetStateGroupsOnUserRequest(me.UserId)); }
-                catch (Exception e) { Plugin.Trace("[контрприём] запрос состояний не ушёл: " + e.Message); }
-                _stateAsked = Time.unscaledTime;
-                return false;
-            }
-            var st = me.CharacterStates;
-            return (st != null && st.Actual) || Time.unscaledTime - _stateAsked >= 2f;
         }
 
         private static bool HasCounterState(PlayerCharacter me, int id)

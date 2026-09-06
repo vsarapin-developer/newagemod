@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.2.2")]
+    [BepInPlugin(Guid, "New Age QoL", "1.3.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -50,6 +50,7 @@ namespace NewAgeQoL
         internal static ConfigEntry<int> CfgCounterRefreshRounds;
         internal static ConfigEntry<int> CfgCounterId;
         internal static ConfigEntry<bool> CfgVerbose;
+        internal static ConfigEntry<bool> CfgMarketMultiLot;
         internal static ConfigEntry<bool> CfgTravelButton;
         internal static ConfigEntry<string> CfgTravelSpots;
         internal static ConfigEntry<string> CfgTravelGates;
@@ -197,6 +198,8 @@ namespace NewAgeQoL
             CfgItemIds = Config.Bind("Inventory", "ShowThingIds", true,
                 "У вещей, используемых ВНЕ боя (зелья, прочие внебоевые расходники, руны), дописывать к названию id в скобках: «Зелье здоровья (427)». Этот id вставляется в настройки банок. Боевые расходники, снаряжение и рецепты не трогаются, на рынке id не показывается.");
 
+            CfgMarketMultiLot = Config.Bind("Market", "MultiLot", true,
+                "В штатном окне выставления вещи на рынок добавляет поле «Лотов»: сколько одинаковых лотов выставить подряд по заданной цене. 1 — как обычно.");
             CfgVerbose = Config.Bind("Log", "Verbose", false,
                 "Писать в лог подробности работы: что нажато, что найдено в сумке, какие окна перестроены. По умолчанию ВЫКЛ — в логе остаются только ошибки и строчка о загрузке. Включай, если нужно показать, что происходит, при разборе проблемы.");
 
@@ -236,6 +239,7 @@ namespace NewAgeQoL
             ContractNumbers.Tick();
             Search.Tick();
             Counter.Tick();
+            Market.Tick();
         }
     }
 }
