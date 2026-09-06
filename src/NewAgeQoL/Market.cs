@@ -195,6 +195,7 @@ namespace NewAgeQoL
                     _single = msg.SingleLot.GetValueOrDefault();
                     _remaining = _lots - 1;
                     _done = false;
+                    Air("Рынок: выставляю лотов: " + _lots);
                     Plugin.Trace("[рынок] лот 1/" + _lots + " ушёл, в очереди ещё " + _remaining);
                     return;
                 }
@@ -214,6 +215,7 @@ namespace NewAgeQoL
                         if (_rQueue.Count >= _removeLots - 1) break;
                     }
                     _rDone = false;
+                    Air("Рынок: снимаю лотов: " + _removeLots);
                     Plugin.Trace("[рынок] снятие 1/" + _removeLots + ", в очереди ещё " + _rQueue.Count);
                 }
             }
@@ -252,6 +254,7 @@ namespace NewAgeQoL
                     return;
                 }
                 _done = true;
+                Air("Рынок: выставлено лотов: " + _lots);
                 Plugin.Trace("[рынок] все " + _lots + " лотов выставлены");
                 Refresh(WinPutOnMarket, _tab);
                 return;
@@ -281,9 +284,16 @@ namespace NewAgeQoL
                     return;
                 }
                 _rDone = true;
+                Air("Рынок: снято лотов: " + _removeLots);
                 Plugin.Trace("[рынок] снятие завершено");
                 Refresh(WinSellerOffers, _rTab);
             }
+        }
+
+        private static void Air(string text)
+        {
+            try { AirMessageScript.ShowInformationNotification(text); }
+            catch (Exception e) { Plugin.Trace("[рынок] сообщение: " + e.Message); }
         }
 
         private static void DropOffer(int offerId)
