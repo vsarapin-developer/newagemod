@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -502,10 +502,6 @@ namespace NewAgeQoL
         private static GameObject _cell;
         private static float _cellSide = 64f;
         private static float _cellAt = -100f;
-
-        internal static float CellSide => _cellSide;
-
-        internal static GameObject CellPrefab() => Cell();
 
         private static GameObject Cell()
         {

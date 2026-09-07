@@ -15,15 +15,11 @@ namespace NewAgeQoL
 
         private static readonly List<Action> _undo = new List<Action>();
 
-        internal static bool IsOpen => _win != null;
-
         private abstract class RowDef { internal string Title; }
 
         private sealed class Header : RowDef { }
 
         private sealed class BoolRow : RowDef { internal ConfigEntry<bool> Cfg; }
-
-        private sealed class KeyRow : RowDef { internal ConfigEntry<string> Cfg; }
 
         private sealed class PickRow : RowDef { internal ConfigEntry<string> ByName; internal ConfigEntry<int> ById; internal System.Func<string> Display; }
 
@@ -82,9 +78,6 @@ namespace NewAgeQoL
             return rows;
         }
 
-        private static RowDef K(string title, ConfigEntry<string> cfg) =>
-            cfg == null ? null : new KeyRow { Title = title, Cfg = cfg };
-
         private static RowDef Pick(string title, ConfigEntry<string> byName, ConfigEntry<int> byId)
         {
             if (byName == null || byId == null) return null;
@@ -99,25 +92,6 @@ namespace NewAgeQoL
                     if (byId.Value > 0) { var n = Flasks.DisplayName(byId.Value); return n ?? byId.Value.ToString(); }
                     return "— выбрать —";
                 },
-            };
-        }
-
-        private static RowDef Btn(string title, ConfigEntry<string> byName, ConfigEntry<int> byId)
-        {
-            if (byName == null || byId == null) return null;
-            return new ValueRow
-            {
-                Title = title,
-                Get = () => !string.IsNullOrEmpty(byName.Value) ? byName.Value
-                          : byId.Value > 0 ? byId.Value.ToString() : "",
-                Set = v =>
-                {
-                    v = (v ?? "").Trim();
-                    if (int.TryParse(v, out int n)) { byId.Value = n; byName.Value = ""; }
-                    else { byName.Value = v; byId.Value = 0; }
-                },
-                Remember = () => { Remember(byName); Remember(byId); },
-                Reset = () => { byName.Value = (string)byName.DefaultValue; byId.Value = (int)byId.DefaultValue; },
             };
         }
 
@@ -148,15 +122,6 @@ namespace NewAgeQoL
                 Reset = () => cfg.Value = (float)cfg.DefaultValue,
             };
 
-        private static RowDef S(string title, ConfigEntry<string> cfg) =>
-            cfg == null ? null : new ValueRow
-            {
-                Title = title,
-                Get = () => cfg.Value ?? "",
-                Set = v => cfg.Value = v,
-                Remember = () => Remember(cfg),
-                Reset = () => cfg.Value = (string)cfg.DefaultValue,
-            };
 
         internal static void Toggle()
         {
@@ -176,8 +141,6 @@ namespace NewAgeQoL
             _refresh.Clear();
             _reset.Clear();
             _undo.Clear();
-            _captureCfg = null;
-            _captureText = null;
         }
 
         private static void Remember<T>(ConfigEntry<T> cfg)
@@ -377,25 +340,6 @@ namespace NewAgeQoL
                 return;
             }
 
-            if (def is KeyRow keyRow)
-            {
-                Remember(keyRow.Cfg);
-                ShowKey(value, keyRow.Cfg.Value);
-                if (button != null)
-                {
-                    button.onClick.RemoveAllListeners();
-                    button.onClick.AddListener(() =>
-                    {
-                        _captureCfg = keyRow.Cfg;
-                        _captureText = value;
-                        if (value != null) { value.text = "жми клавишу…"; value.color = new Color(0.05f, 0.25f, 0.55f); }
-                    });
-                }
-                _refresh.Add(() => ShowKey(value, keyRow.Cfg.Value));
-                _reset.Add(() => keyRow.Cfg.Value = (string)keyRow.Cfg.DefaultValue);
-                return;
-            }
-
             if (def is BoolRow b)
             {
                 Remember(b.Cfg);
@@ -455,62 +399,9 @@ namespace NewAgeQoL
             });
         }
 
-        private static ConfigEntry<string> _captureCfg;
-        private static Text _captureText;
-
         internal static void Tick()
         {
             if (_win != null) Stretch();
-            if (_captureCfg == null) return;
-            if (_win == null) { _captureCfg = null; _captureText = null; return; }
-            if (!Input.anyKeyDown) return;
-
-            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Backspace) || Input.GetKeyDown(KeyCode.Delete))
-            {
-                if (Input.GetKeyDown(KeyCode.Backspace) || Input.GetKeyDown(KeyCode.Delete)) _captureCfg.Value = "";
-                Finish();
-                return;
-            }
-
-            foreach (KeyCode code in Enum.GetValues(typeof(KeyCode)))
-            {
-                if (!Input.GetKeyDown(code) || IsModifier(code) || IsMouse(code)) continue;
-                string combo = "";
-                if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) combo += "Ctrl+";
-                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) combo += "Alt+";
-                if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) combo += "Shift+";
-                _captureCfg.Value = combo + KeyName(code);
-                Finish();
-                return;
-            }
-        }
-
-        private static void Finish()
-        {
-            ShowKey(_captureText, _captureCfg.Value);
-            _captureCfg = null;
-            _captureText = null;
-        }
-
-        private static bool IsModifier(KeyCode c) =>
-            c == KeyCode.LeftControl || c == KeyCode.RightControl || c == KeyCode.LeftAlt || c == KeyCode.RightAlt
-            || c == KeyCode.LeftShift || c == KeyCode.RightShift || c == KeyCode.LeftCommand || c == KeyCode.RightCommand
-            || c == KeyCode.LeftWindows || c == KeyCode.RightWindows || c == KeyCode.AltGr;
-
-        private static bool IsMouse(KeyCode c) => c >= KeyCode.Mouse0 && c <= KeyCode.Mouse6;
-
-        private static string KeyName(KeyCode c)
-        {
-            if (c >= KeyCode.Alpha0 && c <= KeyCode.Alpha9) return ((int)(c - KeyCode.Alpha0)).ToString();
-            if (c >= KeyCode.Keypad0 && c <= KeyCode.Keypad9) return ((int)(c - KeyCode.Keypad0)).ToString();
-            return c.ToString();
-        }
-
-        private static void ShowKey(Text value, string spec)
-        {
-            if (value == null) return;
-            value.text = string.IsNullOrEmpty(spec) ? "—" : spec;
-            value.color = Color.black;
         }
 
         private static void ScrollTop(ScrollRect scroll)

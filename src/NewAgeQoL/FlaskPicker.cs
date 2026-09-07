@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using BepInEx.Configuration;
 using UnityEngine;
@@ -23,8 +23,6 @@ namespace NewAgeQoL
         private static readonly List<KeyValuePair<int, Image>> _cells = new List<KeyValuePair<int, Image>>();
         private static readonly List<int> _shown = new List<int>();
         private static float _refreshAt;
-
-        internal static bool IsOpen => _canvas != null;
 
         internal static void Open(ConfigEntry<string> byName, ConfigEntry<int> byId, string title, Action onPicked)
         {
