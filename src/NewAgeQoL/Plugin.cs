@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.7.0")]
+    [BepInPlugin(Guid, "New Age QoL", "1.7.1")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -54,6 +54,7 @@ namespace NewAgeQoL
         internal static ConfigEntry<string> CfgOnlineLogin;
         internal static ConfigEntry<string> CfgOnlinePassword;
         internal static ConfigEntry<string> CfgOnlineVersion;
+        internal static ConfigEntry<string> CfgOnlineClanCache;
         internal static ConfigEntry<bool> CfgTravelButton;
         internal static ConfigEntry<string> CfgTravelSpots;
         internal static ConfigEntry<string> CfgTravelGates;
@@ -208,6 +209,8 @@ namespace NewAgeQoL
                 "Пароль запасного аккаунта. Хранится в этом файле открытым текстом.");
             CfgOnlineVersion = Config.Bind("Online", "FlashVersion", "11073",
                 "Номер версии старого 2D-клиента, который мод называет серверу при входе запасным аккаунтом. Менять только если сервер отвечает «Обновите версию игры».");
+            CfgOnlineClanCache = Config.Bind("Online", "ClanIconCache", "",
+                "Узнанные коды значков кланов для окна «Кто в игре» в виде «значок:код» через запятую. Заполняется само, чтобы значки появлялись сразу.");
             CfgVerbose = Config.Bind("Log", "Verbose", false,
                 "Писать в лог подробности работы: что нажато, что найдено в сумке, какие окна перестроены. По умолчанию ВЫКЛ — в логе остаются только ошибки и строчка о загрузке. Включай, если нужно показать, что происходит, при разборе проблемы.");
 
@@ -249,6 +252,7 @@ namespace NewAgeQoL
             Counter.Tick();
             Market.Tick();
             FlaskPicker.Tick();
+            OnlineList.Tick();
             OnlineWindow.Tick();
         }
     }

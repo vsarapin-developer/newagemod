@@ -1,9 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using Transport.Messages.Responses.User.Info;
+using UnityEngine;
 
 namespace NewAgeQoL
 {
@@ -25,6 +27,7 @@ namespace NewAgeQoL
     {
         private const string Host = "nura.biz";
         private const int Port = 2000;
+        private const float AskEvery = 0.12f;
 
         private static readonly object Gate = new object();
         private static List<OnlinePlayer> _players = new List<OnlinePlayer>();
@@ -32,6 +35,14 @@ namespace NewAgeQoL
         private static bool _busy;
         private static int _version;
         private static DateTime _at = DateTime.MinValue;
+
+        private static readonly Dictionary<string, int> ClanCodes = new Dictionary<string, int>();
+        private static readonly HashSet<string> ClanNoCode = new HashSet<string>();
+        private static readonly Queue<OnlinePlayer> AskQueue = new Queue<OnlinePlayer>();
+        private static readonly HashSet<int> Asked = new HashSet<int>();
+        private static float _askAt;
+        private static object _on;
+        private static bool _cacheLoaded;
 
         internal static bool Busy { get { lock (Gate) return _busy; } }
         internal static string Status { get { lock (Gate) return _status; } }
@@ -41,6 +52,93 @@ namespace NewAgeQoL
 
         internal static bool Configured =>
             !string.IsNullOrEmpty(Plugin.CfgOnlineLogin?.Value?.Trim()) && !string.IsNullOrEmpty(Plugin.CfgOnlinePassword?.Value);
+
+        internal static void Tick()
+        {
+            try
+            {
+                Listen();
+                LoadCache();
+                if (AskQueue.Count == 0 || Time.unscaledTime < _askAt) return;
+                var nc = NetworkConnection.Instance;
+                if (nc == null || !nc.IsConnected()) { AskQueue.Clear(); return; }
+                var p = AskQueue.Dequeue();
+                _askAt = Time.unscaledTime + AskEvery;
+                nc.SendRequest(new UserInfoRequest(p.Id, p.Login));
+            }
+            catch (Exception e) { Plugin.Trace("[онлайн] значки клана: " + e.Message); }
+        }
+
+        private static void Listen()
+        {
+            var nc = NetworkConnection.Instance;
+            if (nc == null || !nc.IsConnected()) { _on = null; return; }
+            if (ReferenceEquals(_on, nc)) return;
+            nc.RemoveMessageListener(433, OnUserInfo);
+            nc.AddMessageListener(433, OnUserInfo);
+            _on = nc;
+        }
+
+        private static void LoadCache()
+        {
+            if (_cacheLoaded) return;
+            _cacheLoaded = true;
+            string raw = Plugin.CfgOnlineClanCache?.Value ?? "";
+            foreach (var part in raw.Split(','))
+            {
+                int i = part.LastIndexOf(':');
+                if (i <= 0) continue;
+                int code;
+                if (int.TryParse(part.Substring(i + 1), out code)) ClanCodes[part.Substring(0, i)] = code;
+            }
+        }
+
+        private static void SaveCache()
+        {
+            if (Plugin.CfgOnlineClanCache == null) return;
+            var sb = new StringBuilder();
+            foreach (var kv in ClanCodes)
+            {
+                if (sb.Length > 0) sb.Append(',');
+                sb.Append(kv.Key.Replace(',', '_').Replace(':', '_')).Append(':').Append(kv.Value);
+            }
+            Plugin.CfgOnlineClanCache.Value = sb.ToString();
+        }
+
+        internal static bool ClanCode(string icon, out int code)
+        {
+            code = 0;
+            return !string.IsNullOrEmpty(icon) && ClanCodes.TryGetValue(icon, out code);
+        }
+
+        internal static void AskClanCodes(List<OnlinePlayer> players)
+        {
+            var wanted = new HashSet<string>();
+            foreach (var p in players)
+            {
+                if (string.IsNullOrEmpty(p.Clan) || ClanCodes.ContainsKey(p.Clan) || ClanNoCode.Contains(p.Clan)) continue;
+                if (!wanted.Add(p.Clan)) continue;
+                if (Asked.Contains(p.Id)) continue;
+                Asked.Add(p.Id);
+                AskQueue.Enqueue(p);
+            }
+        }
+
+        private static void OnUserInfo(object m)
+        {
+            var info = m as Unity3DUserInfoResponseMessage;
+            if (info == null) return;
+            OnlinePlayer p = null;
+            lock (Gate) foreach (var x in _players) if (x.Id == info.UserId) { p = x; break; }
+            if (p == null || string.IsNullOrEmpty(p.Clan)) return;
+            if (info.ClanIconCode.HasValue)
+            {
+                ClanCodes[p.Clan] = info.ClanIconCode.Value;
+                SaveCache();
+            }
+            else ClanNoCode.Add(p.Clan);
+            lock (Gate) _version++;
+        }
 
         internal static void Refresh()
         {
