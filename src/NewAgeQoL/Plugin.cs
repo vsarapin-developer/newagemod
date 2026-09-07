@@ -9,7 +9,7 @@ namespace NewAgeQoL
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
-        public const string Version = "1.7.7";
+        public const string Version = "1.7.8";
 
         internal static ManualLogSource Log;
         internal static Plugin Instance;

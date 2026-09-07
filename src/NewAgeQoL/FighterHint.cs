@@ -67,8 +67,8 @@ namespace NewAgeQoL
                     return;
                 }
                 LayoutRebuilder.ForceRebuildLayoutImmediate(_board);
-                Place();
-                if (_reveal) { _reveal = false; _veil.alpha = 1f; }
+                if (_reveal) { _reveal = false; Place(); _veil.alpha = 1f; }
+                else Fit();
                 float at;
                 if (!AskedAt.TryGetValue(id, out at) || Time.unscaledTime - at > Fresh) Ask(id);
             }
@@ -88,7 +88,7 @@ namespace NewAgeQoL
             catch { return null; }
         }
 
-        private static int Under(ICombatData cd)
+        internal static int Under(ICombatData cd)
         {
             var view = CombatLocationView.Instance;
             var camera = view != null ? view.CombatCamera : null;
@@ -410,6 +410,18 @@ namespace NewAgeQoL
             t.raycastTarget = false;
             t.horizontalOverflow = HorizontalWrapMode.Wrap;
             return t;
+        }
+
+        private static void Fit()
+        {
+            if (_board == null || _host == null) return;
+            float width = _board.rect.width > 0f ? _board.rect.width : BoardW;
+            float height = _board.rect.height;
+            float hw = _host.rect.width, hh = _host.rect.height;
+            var at = _board.anchoredPosition;
+            float x = Mathf.Clamp(at.x, 4f, Mathf.Max(4f, hw - width - 4f));
+            float y = Mathf.Clamp(at.y, height + 4f, Mathf.Max(height + 4f, hh - 4f));
+            if (Mathf.Abs(x - at.x) > 0.5f || Mathf.Abs(y - at.y) > 0.5f) _board.anchoredPosition = new Vector2(x, y);
         }
 
         private static void Place()
