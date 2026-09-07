@@ -61,7 +61,6 @@ namespace NewAgeQoL
 
                 new Header { Title = "Инвентарь" },
                 B("Иконка вещи у рецепта", Plugin.CfgRecipeIcons),
-                B("id предмета в названии", Plugin.CfgItemIds),
                 B("Кнопки смены комплекта в снаряжении", Plugin.CfgSlotSwap),
                 B("Вкладка «Контракты»", Plugin.CfgContractsTab),
                 B("Номер на контракте и договоре", Plugin.CfgContractNumbers),

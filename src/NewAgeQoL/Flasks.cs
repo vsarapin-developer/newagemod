@@ -140,7 +140,7 @@ namespace NewAgeQoL
             int id = Thing(row);
             if (id <= 0) return Titles[row] + ": «" + Wish(row) + "» в сумке не найдено";
 
-            string name = Plain(NameOf(id), id);
+            string name = NameOf(id);
             string head = !string.IsNullOrEmpty(name) ? name : Titles[row];
             bool wantFill = Plugin.CfgFlaskFillToMax == null || Plugin.CfgFlaskFillToMax.Value;
             return head + " — " + (wantFill ? "до полного" : "не до полного");
@@ -201,7 +201,7 @@ namespace NewAgeQoL
         internal static string DisplayName(int thingId)
         {
             string n = NameOf(thingId);
-            return string.IsNullOrEmpty(n) ? null : Plain(n, thingId);
+            return string.IsNullOrEmpty(n) ? null : n;
         }
 
         internal static void RequestScan()
@@ -255,15 +255,6 @@ namespace NewAgeQoL
             if (thingId <= 0) return;
             if (!string.IsNullOrEmpty(image)) lock (Images) Images[thingId] = image;
             if (!string.IsNullOrEmpty(name)) lock (Names) Names[thingId] = name;
-        }
-
-        private static string Plain(string name, int thingId)
-        {
-            if (string.IsNullOrEmpty(name)) return name;
-            string tail = " (" + thingId + ")";
-            return name.EndsWith(tail, System.StringComparison.Ordinal)
-                ? name.Substring(0, name.Length - tail.Length)
-                : name;
         }
 
         private static string NameOf(int thingId)

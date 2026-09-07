@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.4.4")]
+    [BepInPlugin(Guid, "New Age QoL", "1.5.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -42,7 +42,6 @@ namespace NewAgeQoL
         internal static ConfigEntry<string> CfgFlaskManaName;
         internal static ConfigEntry<string> CfgFlaskEnergyName;
         internal static ConfigEntry<string> CfgFlaskMushroomName;
-        internal static ConfigEntry<bool> CfgItemIds;
         internal static ConfigEntry<bool> CfgSlotSwap;
         internal static ConfigEntry<bool> CfgInstantRestore;
         internal static ConfigEntry<bool> CfgCounterAuto;
@@ -194,9 +193,6 @@ namespace NewAgeQoL
 
             CfgSlotSwap = Config.Bind("Inventory", "SlotSwapButtons", true,
                 "В окне снаряжения кнопки «⇄» у оружия и реликвий: меняют местами надетое с тем, что лежит в запасных слотах. То же, что приёмы «Смена оружия» и «Смена реликвий» в бою, только вне боя и без перетаскивания.");
-
-            CfgItemIds = Config.Bind("Inventory", "ShowThingIds", true,
-                "У вещей, используемых ВНЕ боя (зелья, прочие внебоевые расходники, руны), дописывать к названию id в скобках: «Зелье здоровья (427)». Этот id вставляется в настройки банок. Боевые расходники, снаряжение и рецепты не трогаются, на рынке id не показывается.");
 
             CfgMarketMultiLot = Config.Bind("Market", "MultiLot", true,
                 "В штатном окне выставления вещи на рынок добавляет поле «Лотов»: сколько одинаковых лотов выставить подряд по заданной цене. 1 — как обычно.");

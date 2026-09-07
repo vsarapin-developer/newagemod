@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using HarmonyLib;
 using Transport.Messages.Common.User;
 using Transport.Messages.Requests.Things.Actions;
@@ -77,6 +78,32 @@ namespace NewAgeQoL
                 if (!_thingOffers.TryGetValue(tid, out list)) { list = new List<int>(); _thingOffers[tid] = list; }
                 list.Add(oid);
             }
+        }
+
+        internal static void FixDecimal(PutOnMarketConfirmDialog dialog)
+        {
+            if (dialog == null) return;
+            try
+            {
+                foreach (var fname in new[] { "TallPriceInputField", "GoldPriceInputField" })
+                {
+                    var cur = AccessTools.Field(typeof(PutOnMarketConfirmDialog), fname)?.GetValue(dialog) as PutOnMarketCurrencyInputField;
+                    if (cur == null) continue;
+                    var input = AccessTools.Field(typeof(PutOnMarketCurrencyInputField), "InputField")?.GetValue(cur) as InputField;
+                    if (input == null) continue;
+                    input.onValidateInput = (text, index, ch) =>
+                    {
+                        if (ch == ',') ch = '.';
+                        return char.IsDigit(ch) || ch == '.' ? ch : '\0';
+                    };
+                    var field = input;
+                    field.onValueChanged.AddListener(v =>
+                    {
+                        if (v != null && v.IndexOf(',') >= 0) field.SetTextWithoutNotify(v.Replace(',', '.'));
+                    });
+                }
+            }
+            catch (Exception e) { Plugin.Trace("[рынок] запятая в цене: " + e.Message); }
         }
 
         internal static void Setup(PutOnMarketConfirmDialog dialog)
@@ -379,7 +406,39 @@ namespace NewAgeQoL
     [HarmonyPatch(typeof(PutOnMarketConfirmDialog), "InitializeDialog")]
     public static class MarketDialogPatch
     {
-        private static void Postfix(PutOnMarketConfirmDialog __instance) => Market.Setup(__instance);
+        private static void Postfix(PutOnMarketConfirmDialog __instance)
+        {
+            Market.FixDecimal(__instance);
+            Market.Setup(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(MarketProposalListItemRowItemRenderer), "UpdateView")]
+    public static class MarketUnitPricePatch
+    {
+        private static void Postfix(MarketProposalListItemRowItemRenderer __instance)
+        {
+            try
+            {
+                var data = __instance.Data;
+                if (data == null || data.Price == null || data.Quantity <= 1) return;
+                Unit(__instance, "TallPrice", data.Price.Talls, data.Quantity, 2);
+                Unit(__instance, "GoldPrice", data.Price.Gold, data.Quantity, 4);
+            }
+            catch (Exception e) { Plugin.Trace("[рынок] цена за штуку: " + e.Message); }
+        }
+
+        private static void Unit(MarketProposalListItemRowItemRenderer r, string field, float? price, int qty, int digits)
+        {
+            if (!price.HasValue || price.Value <= 0f) return;
+            var dp = AccessTools.Field(typeof(MarketProposalListItemRowItemRenderer), field)?.GetValue(r) as DialogPrice;
+            if (dp == null || dp.Text == null || !dp.gameObject.activeSelf) return;
+            string per = (price.Value / qty).ToString("0." + new string('#', digits), CultureInfo.InvariantCulture);
+            var t = dp.Text;
+            t.supportRichText = true;
+            t.horizontalOverflow = HorizontalWrapMode.Overflow;
+            t.text = ResourceStrings.FloatToString(price.Value) + " <size=" + Mathf.Max(10, t.fontSize - 4) + ">(" + per + "/шт)</size>";
+        }
     }
 
     [HarmonyPatch(typeof(ThingHintDialog), "FillInventoryThingFields")]
