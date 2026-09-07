@@ -29,6 +29,7 @@ namespace NewAgeQoL
             internal Action<string> Set;
             internal Action Reset;
             internal Action Remember;
+            internal bool Secret;
         }
 
         private static List<RowDef> Rows()
@@ -69,6 +70,11 @@ namespace NewAgeQoL
                 new Header { Title = "Рынок" },
                 B("Несколько лотов на рынок за раз", Plugin.CfgMarketMultiLot),
 
+                new Header { Title = "Кто в игре" },
+                B("Кнопка «Кто в игре»", Plugin.CfgOnlineButton),
+                S("Логин запасного аккаунта", Plugin.CfgOnlineLogin),
+                S("Пароль запасного аккаунта", Plugin.CfgOnlinePassword, secret: true),
+
                 new Header { Title = "Чат" },
                 B("Свои строки в логе зелёным", Plugin.CfgChatHighlight),
                 B("Прятать окно «Системное сообщение»", Plugin.CfgHideSystemBoxes),
@@ -96,6 +102,17 @@ namespace NewAgeQoL
 
         private static RowDef B(string title, ConfigEntry<bool> cfg) =>
             cfg == null ? null : new BoolRow { Title = title, Cfg = cfg };
+
+        private static RowDef S(string title, ConfigEntry<string> cfg, bool secret = false) =>
+            cfg == null ? null : new ValueRow
+            {
+                Title = title,
+                Get = () => cfg.Value ?? "",
+                Set = v => cfg.Value = (v ?? "").Trim(),
+                Remember = () => Remember(cfg),
+                Reset = () => cfg.Value = (string)cfg.DefaultValue,
+                Secret = secret,
+            };
 
         private static RowDef I(string title, ConfigEntry<int> cfg) =>
             cfg == null ? null : new ValueRow
@@ -376,8 +393,9 @@ namespace NewAgeQoL
 
             var row = (ValueRow)def;
             if (row.Remember != null) row.Remember();
-            if (value != null) value.text = row.Get();
-            _refresh.Add(() => { if (value != null) value.text = row.Get(); });
+            Func<string> shown = () => row.Secret ? new string('•', row.Get().Length) : row.Get();
+            if (value != null) value.text = shown();
+            _refresh.Add(() => { if (value != null) value.text = shown(); });
             if (row.Reset != null) _reset.Add(row.Reset);
 
             if (background == null || value == null) return;
@@ -387,14 +405,15 @@ namespace NewAgeQoL
             input.targetGraphic = background;
             input.textComponent = value;
             input.lineType = InputField.LineType.SingleLine;
-            value.text = row.Get();
+            if (row.Secret) input.contentType = InputField.ContentType.Password;
+            value.text = shown();
             input.SetTextWithoutNotify(row.Get());
             input.onEndEdit.AddListener(v =>
             {
                 row.Set(v);
                 string now = row.Get();
                 input.SetTextWithoutNotify(now);
-                value.text = now;
+                value.text = shown();
             });
         }
 

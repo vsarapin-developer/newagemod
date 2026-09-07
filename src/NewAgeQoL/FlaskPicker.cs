@@ -259,7 +259,7 @@ namespace NewAgeQoL
             return t;
         }
 
-        private static Font Font()
+        internal static Font Font()
         {
             try
             {

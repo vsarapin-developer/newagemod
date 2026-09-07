@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.5.2")]
+    [BepInPlugin(Guid, "New Age QoL", "1.6.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -50,6 +50,10 @@ namespace NewAgeQoL
         internal static ConfigEntry<int> CfgCounterId;
         internal static ConfigEntry<bool> CfgVerbose;
         internal static ConfigEntry<bool> CfgMarketMultiLot;
+        internal static ConfigEntry<bool> CfgOnlineButton;
+        internal static ConfigEntry<string> CfgOnlineLogin;
+        internal static ConfigEntry<string> CfgOnlinePassword;
+        internal static ConfigEntry<string> CfgOnlineVersion;
         internal static ConfigEntry<bool> CfgTravelButton;
         internal static ConfigEntry<string> CfgTravelSpots;
         internal static ConfigEntry<string> CfgTravelGates;
@@ -196,6 +200,14 @@ namespace NewAgeQoL
 
             CfgMarketMultiLot = Config.Bind("Market", "MultiLot", true,
                 "В штатном окне выставления вещи на рынок добавляет поле «Лотов»: сколько одинаковых лотов выставить подряд по заданной цене. 1 — как обычно.");
+            CfgOnlineButton = Config.Bind("Online", "Button", true,
+                "Кнопка «Кто в игре» в боковой панели: полный список игроков онлайн, как в старом 2D-клиенте. Список сервер отдаёт только старому протоколу, а вход по нему выбивает свою же сессию, поэтому мод заходит ЗАПАСНЫМ аккаунтом: подключается им, забирает список, отключается. Запасной персонаж на пару секунд появляется в мире.");
+            CfgOnlineLogin = Config.Bind("Online", "Login", "",
+                "Логин запасного аккаунта для списка «Кто в игре». Пусто — кнопка подскажет, что настроить.");
+            CfgOnlinePassword = Config.Bind("Online", "Password", "",
+                "Пароль запасного аккаунта. Хранится в этом файле открытым текстом.");
+            CfgOnlineVersion = Config.Bind("Online", "FlashVersion", "11073",
+                "Номер версии старого 2D-клиента, который мод называет серверу при входе запасным аккаунтом. Менять только если сервер отвечает «Обновите версию игры».");
             CfgVerbose = Config.Bind("Log", "Verbose", false,
                 "Писать в лог подробности работы: что нажато, что найдено в сумке, какие окна перестроены. По умолчанию ВЫКЛ — в логе остаются только ошибки и строчка о загрузке. Включай, если нужно показать, что происходит, при разборе проблемы.");
 
@@ -237,6 +249,7 @@ namespace NewAgeQoL
             Counter.Tick();
             Market.Tick();
             FlaskPicker.Tick();
+            OnlineWindow.Tick();
         }
     }
 }

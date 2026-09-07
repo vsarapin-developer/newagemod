@@ -66,6 +66,16 @@ namespace NewAgeQoL
                 Badge = () => Travel.Busy ? "▶" : "",
                 Click = TravelMenu.Toggle,
             },
+            new Entry
+            {
+                Name = "QoLOnlineButton",
+                Col = 2,
+                Hint = () => OnlineList.Configured ? "Кто в игре" : "Кто в игре: укажи запасной аккаунт в настройках мода",
+                Enabled = () => Plugin.CfgOnlineButton == null || Plugin.CfgOnlineButton.Value,
+                Sprite = () => Pick(1, "assassin_list", "friends", "clan"),
+                Badge = () => OnlineList.Busy ? "…" : "",
+                Click = OnlineWindow.Toggle,
+            },
         };
 
         static SideButtons()
