@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
@@ -47,7 +47,6 @@ namespace NewAgeQoL
         internal static bool Busy { get { lock (Gate) return _busy; } }
         internal static string Status { get { lock (Gate) return _status; } }
         internal static int Version { get { lock (Gate) return _version; } }
-        internal static DateTime At { get { lock (Gate) return _at; } }
         internal static List<OnlinePlayer> Players { get { lock (Gate) return new List<OnlinePlayer>(_players); } }
 
         internal static bool Configured =>

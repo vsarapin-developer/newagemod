@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Transport.Messages.Common.User;
 using UnityEngine;
@@ -26,8 +26,6 @@ namespace NewAgeQoL
         private static bool _registered;
         private static readonly Dictionary<string, string> RightsNames = new Dictionary<string, string>();
         private static readonly Dictionary<string, int> ClassByName = BuildClasses();
-
-        internal static bool IsOpen => _canvasGo != null;
 
         internal static void Toggle()
         {
