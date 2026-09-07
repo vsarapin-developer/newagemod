@@ -421,7 +421,7 @@ namespace NewAgeQoL
             try
             {
                 var data = __instance.Data;
-                if (data == null || data.Price == null || data.Quantity <= 1) return;
+                if (data == null || data.Price == null || data.Quantity <= 1 || !data.SingleSlot) return;
                 Unit(__instance, "TallPrice", data.Price.Talls, data.Quantity, 2);
                 Unit(__instance, "GoldPrice", data.Price.Gold, data.Quantity, 4);
             }
@@ -434,7 +434,10 @@ namespace NewAgeQoL
             var dp = AccessTools.Field(typeof(MarketProposalListItemRowItemRenderer), field)?.GetValue(r) as DialogPrice;
             if (dp == null || dp.Text == null || !dp.gameObject.activeSelf) return;
             string per = (price.Value / qty).ToString("0." + new string('#', digits), CultureInfo.InvariantCulture);
-            dp.Text.text = per;
+            var t = dp.Text;
+            t.supportRichText = true;
+            t.horizontalOverflow = HorizontalWrapMode.Overflow;
+            t.text = ResourceStrings.FloatToString(price.Value) + " <size=" + Mathf.Max(10, t.fontSize - 4) + ">(" + per + ")</size>";
         }
     }
 
