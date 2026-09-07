@@ -8,15 +8,18 @@ namespace NewAgeQoL
 {
     internal static class FlaskPicker
     {
-        private const float Cell = 96f;
+        private const float PanelW = 580f;
+        private const float PanelH = 640f;
+        private const float Cell = 104f;
         private const float Icon = 64f;
+        private const int Columns = 4;
 
         private static Canvas _canvas;
         private static Transform _grid;
-        private static Text _title;
         private static ConfigEntry<string> _byName;
         private static ConfigEntry<int> _byId;
         private static Action _onPicked;
+        private static string _keyword = "";
         private static readonly List<KeyValuePair<int, Image>> _cells = new List<KeyValuePair<int, Image>>();
         private static readonly List<int> _shown = new List<int>();
         private static float _refreshAt;
@@ -28,13 +31,25 @@ namespace NewAgeQoL
             _byName = byName;
             _byId = byId;
             _onPicked = onPicked;
+            _keyword = KeywordFor(title);
             try
             {
                 Flasks.RequestScan();
+                Flasks.RequestNames();
                 Build(title);
                 Rebuild();
             }
             catch (Exception e) { Plugin.Log?.LogError("[банки] выбор: " + e.Message); Close(); }
+        }
+
+        private static string KeywordFor(string title)
+        {
+            title = (title ?? "").ToLowerInvariant();
+            if (title.Contains("жизн") || title.Contains("здоров")) return "здоров";
+            if (title.Contains("ман")) return "ман";
+            if (title.Contains("энерг")) return "энерг";
+            if (title.Contains("гриб")) return "гриб";
+            return "";
         }
 
         internal static void Close()
@@ -42,7 +57,6 @@ namespace NewAgeQoL
             if (_canvas != null) UnityEngine.Object.Destroy(_canvas.gameObject);
             _canvas = null;
             _grid = null;
-            _title = null;
             _cells.Clear();
             _shown.Clear();
         }
@@ -54,10 +68,23 @@ namespace NewAgeQoL
             if (Time.unscaledTime < _refreshAt) return;
             _refreshAt = Time.unscaledTime + 0.3f;
 
-            var things = Flasks.ConsumableThings();
+            var things = Filtered();
             if (things.Count != _shown.Count) { Rebuild(); return; }
             foreach (var pair in _cells)
                 if (pair.Value != null) pair.Value.sprite = Flasks.IconFor(pair.Key);
+        }
+
+        private static List<int> Filtered()
+        {
+            var list = new List<int>();
+            foreach (int tid in Flasks.ConsumableThings())
+            {
+                if (_keyword.Length == 0) { list.Add(tid); continue; }
+                string name = Flasks.DisplayName(tid);
+                if (name != null && name.ToLowerInvariant().Contains(_keyword)) list.Add(tid);
+            }
+            list.Sort();
+            return list;
         }
 
         private static void Build(string title)
@@ -78,35 +105,63 @@ namespace NewAgeQoL
             backGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.6f);
             backGo.GetComponent<Button>().onClick.AddListener(Close);
 
-            var panelGo = new GameObject("panel", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            var panelGo = new GameObject("panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(go.transform, false);
             var prt = (RectTransform)panelGo.transform;
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
+            prt.sizeDelta = new Vector2(PanelW, PanelH);
             prt.anchoredPosition = Vector2.zero;
-            var pbg = panelGo.GetComponent<Image>();
-            pbg.color = new Color(0.16f, 0.12f, 0.08f, 0.98f);
-            var vlg = panelGo.GetComponent<VerticalLayoutGroup>();
-            vlg.padding = new RectOffset(16, 16, 14, 16);
-            vlg.spacing = 10f;
-            vlg.childAlignment = TextAnchor.UpperCenter;
-            vlg.childForceExpandWidth = false;
-            vlg.childForceExpandHeight = false;
-            var fit = panelGo.GetComponent<ContentSizeFitter>();
-            fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            panelGo.GetComponent<Image>().color = new Color(0.16f, 0.12f, 0.08f, 0.98f);
+
+            var titleT = Line(panelGo.transform, (title ?? "") + " — выбери банку", 22, FontStyle.Bold, new Color32(255, 224, 130, 255));
+            var trt = (RectTransform)titleT.transform;
+            trt.anchorMin = new Vector2(0f, 1f); trt.anchorMax = new Vector2(1f, 1f); trt.pivot = new Vector2(0.5f, 1f);
+            trt.offsetMin = new Vector2(12f, -46f); trt.offsetMax = new Vector2(-12f, -8f);
+            titleT.alignment = TextAnchor.MiddleCenter;
+
+            var closeGo = new GameObject("close", typeof(RectTransform), typeof(Image), typeof(Button));
+            closeGo.transform.SetParent(panelGo.transform, false);
+            var crt = (RectTransform)closeGo.transform;
+            crt.anchorMin = crt.anchorMax = new Vector2(1f, 1f); crt.pivot = new Vector2(1f, 1f);
+            crt.sizeDelta = new Vector2(34f, 34f); crt.anchoredPosition = new Vector2(-6f, -6f);
+            closeGo.GetComponent<Image>().color = new Color(0.6f, 0.15f, 0.1f, 1f);
+            closeGo.GetComponent<Button>().onClick.AddListener(Close);
+            var xT = Line(closeGo.transform, "X", 20, FontStyle.Bold, Color.white);
+            var xrt = (RectTransform)xT.transform; xrt.anchorMin = Vector2.zero; xrt.anchorMax = Vector2.one; xrt.offsetMin = Vector2.zero; xrt.offsetMax = Vector2.zero;
+            xT.alignment = TextAnchor.MiddleCenter;
+
+            var scrollGo = new GameObject("scroll", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(RectMask2D));
+            scrollGo.transform.SetParent(panelGo.transform, false);
+            var srt = (RectTransform)scrollGo.transform;
+            srt.anchorMin = Vector2.zero; srt.anchorMax = Vector2.one;
+            srt.offsetMin = new Vector2(12f, 12f); srt.offsetMax = new Vector2(-12f, -52f);
+            scrollGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.25f);
+            var scroll = scrollGo.GetComponent<ScrollRect>();
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.scrollSensitivity = 30f;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+
+            var contentGo = new GameObject("content", typeof(RectTransform), typeof(GridLayoutGroup), typeof(ContentSizeFitter));
+            contentGo.transform.SetParent(scrollGo.transform, false);
+            var cont = (RectTransform)contentGo.transform;
+            cont.anchorMin = new Vector2(0f, 1f); cont.anchorMax = new Vector2(1f, 1f); cont.pivot = new Vector2(0.5f, 1f);
+            cont.offsetMin = new Vector2(0f, 0f); cont.offsetMax = new Vector2(0f, 0f);
+            var glg = contentGo.GetComponent<GridLayoutGroup>();
+            glg.cellSize = new Vector2(Cell, Cell + 26f);
+            glg.spacing = new Vector2(8f, 8f);
+            glg.padding = new RectOffset(6, 6, 6, 6);
+            glg.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            glg.constraintCount = Columns;
+            glg.childAlignment = TextAnchor.UpperLeft;
+            var fit = contentGo.GetComponent<ContentSizeFitter>();
+            fit.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            _title = Line(panelGo.transform, title + " — выбери банку", 22, FontStyle.Bold, new Color32(255, 224, 130, 255));
-
-            var gridGo = new GameObject("grid", typeof(RectTransform), typeof(GridLayoutGroup));
-            gridGo.transform.SetParent(panelGo.transform, false);
-            var glg = gridGo.GetComponent<GridLayoutGroup>();
-            glg.cellSize = new Vector2(Cell, Cell + 22f);
-            glg.spacing = new Vector2(8f, 8f);
-            glg.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            glg.constraintCount = 5;
-            glg.childAlignment = TextAnchor.UpperLeft;
-            _grid = gridGo.transform;
+            scroll.content = cont;
+            scroll.viewport = srt;
+            _grid = contentGo.transform;
         }
 
         private static void Rebuild()
@@ -116,8 +171,7 @@ namespace NewAgeQoL
             _cells.Clear();
             _shown.Clear();
 
-            var things = Flasks.ConsumableThings();
-            things.Sort();
+            var things = Filtered();
             foreach (int tid in things)
             {
                 _shown.Add(tid);
@@ -149,13 +203,17 @@ namespace NewAgeQoL
                 cap.horizontalOverflow = HorizontalWrapMode.Wrap;
                 cap.verticalOverflow = VerticalWrapMode.Truncate;
                 var csz = cap.gameObject.GetComponent<LayoutElement>() ?? cap.gameObject.AddComponent<LayoutElement>();
-                csz.minHeight = 20f; csz.preferredHeight = 20f;
+                csz.minHeight = 30f; csz.preferredHeight = 30f;
 
                 _cells.Add(new KeyValuePair<int, Image>(thingId, iconImg));
             }
 
             if (things.Count == 0)
-                Line(_grid, "Банок в сумке не найдено — открой сумку разок", 14, FontStyle.Normal, new Color32(220, 200, 170, 255));
+            {
+                var t = Line(_grid, "Пока пусто — открой сумку разок, банки подтянутся", 13, FontStyle.Normal, new Color32(220, 200, 170, 255));
+                var le = t.gameObject.GetComponent<LayoutElement>() ?? t.gameObject.AddComponent<LayoutElement>();
+                le.minWidth = PanelW - 40f; le.minHeight = 40f;
+            }
         }
 
         private static void Pick(int thingId)

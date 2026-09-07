@@ -201,6 +201,19 @@ namespace NewAgeQoL
             _nextScan = 0f;
         }
 
+        internal static void RequestNames()
+        {
+            List<int> ids;
+            lock (Scanned)
+            {
+                ids = new List<int>();
+                foreach (var s in Scanned)
+                    if (Consumable(s.SubType) && s.Qty > 0 && NameOf(s.ThingId) == null)
+                        ids.Add(s.ThingId);
+            }
+            foreach (int id in ids) AskInfo(id);
+        }
+
         private static Sprite Fallback()
         {
             try { return AtlasUtils.GetThingTabImage(EThingTabType.NON_COMBAT_USED_TAB); }
