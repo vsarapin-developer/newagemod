@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.7.1")]
+    [BepInPlugin(Guid, "New Age QoL", "1.7.2")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
@@ -55,6 +55,7 @@ namespace NewAgeQoL
         internal static ConfigEntry<string> CfgOnlinePassword;
         internal static ConfigEntry<string> CfgOnlineVersion;
         internal static ConfigEntry<string> CfgOnlineClanCache;
+        internal static ConfigEntry<int> CfgLastCharacter;
         internal static ConfigEntry<bool> CfgTravelButton;
         internal static ConfigEntry<string> CfgTravelSpots;
         internal static ConfigEntry<string> CfgTravelGates;
@@ -211,6 +212,8 @@ namespace NewAgeQoL
                 "Номер версии старого 2D-клиента, который мод называет серверу при входе запасным аккаунтом. Менять только если сервер отвечает «Обновите версию игры».");
             CfgOnlineClanCache = Config.Bind("Online", "ClanIconCache", "",
                 "Узнанные коды значков кланов для окна «Кто в игре» в виде «значок:код» через запятую. Заполняется само, чтобы значки появлялись сразу.");
+            CfgLastCharacter = Config.Bind("Launch", "LastCharacter", 0,
+                "id персонажа, которым ты в последний раз входил в игру через этот клиент. Заполняется само. На экране выбора персонажа мод сразу показывает его, а не того, кто заходил последним по данным сервера (например, запасного для окна «Кто в игре»). 0 — как в игре.");
             CfgVerbose = Config.Bind("Log", "Verbose", false,
                 "Писать в лог подробности работы: что нажато, что найдено в сумке, какие окна перестроены. По умолчанию ВЫКЛ — в логе остаются только ошибки и строчка о загрузке. Включай, если нужно показать, что происходит, при разборе проблемы.");
 
