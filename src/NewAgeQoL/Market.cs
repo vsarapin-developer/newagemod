@@ -422,7 +422,6 @@ namespace NewAgeQoL
             {
                 var data = __instance.Data;
                 if (data == null || data.Price == null || data.Quantity <= 1 || !data.SingleSlot) return;
-                Unit(__instance, "TallPrice", data.Price.Talls, data.Quantity, 2);
                 Unit(__instance, "GoldPrice", data.Price.Gold, data.Quantity, 4);
             }
             catch (Exception e) { Plugin.Trace("[рынок] цена за штуку: " + e.Message); }
