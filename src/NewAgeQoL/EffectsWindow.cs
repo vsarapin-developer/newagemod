@@ -326,32 +326,6 @@ namespace NewAgeQoL
             return _btnIconSprite;
         }
 
-        private static void Dump(GameObject clone, Transform sample)
-        {
-            try
-            {
-                if (Plugin.CfgVerbose == null || !Plugin.CfgVerbose.Value) return;
-                Plugin.Trace("[эффекты] дерево копии:");
-                Report(clone.transform, "");
-                if (sample != null)
-                {
-                    Plugin.Trace("[эффекты] дерево соседа:");
-                    Report(sample.root == sample ? sample : sample.parent ?? sample, "");
-                }
-            }
-            catch (Exception e) { Plugin.Log?.LogWarning("[эффекты] дерево: " + e.Message); }
-        }
-
-        private static void Report(Transform node, string pad)
-        {
-            if (node == null || pad.Length > 12) return;
-            var image = node.GetComponent<Image>();
-            string art = image == null ? "" : " картинка=" + (image.sprite != null ? image.sprite.name : "нет")
-                                              + (image.enabled ? "" : " выключена");
-            Plugin.Trace("[эффекты]  " + pad + node.name + (node.gameObject.activeSelf ? "" : " (скрыт)") + art);
-            foreach (Transform child in node) Report(child, pad + "  ");
-        }
-
         private static SimpleSectorButtonSelector FindProto()
         {
             SimpleSectorButtonSelector found = null;
@@ -460,7 +434,6 @@ namespace NewAgeQoL
                     lid.gameObject.SetActive(false);
                 }
             }
-            Dump(go, image != null ? image.transform.parent : null);
             Plugin.Trace("[эффекты] кнопка: диск " + (cImage != null ? cImage.gameObject.name : "не найден")
                          + ", значок " + (Info() != null ? Info().name : "не найден")
                          + ", серый круг " + (proto.DisableSprite != null ? proto.DisableSprite.name : "нет")

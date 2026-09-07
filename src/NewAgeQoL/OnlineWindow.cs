@@ -359,7 +359,7 @@ namespace NewAgeQoL
             {
                 if (_query.Length > 0 && Norm(p.Login).IndexOf(_query, StringComparison.Ordinal) < 0) continue;
                 try { AddRow(p); shown++; }
-                catch (Exception e) { Plugin.Log?.LogWarning("[онлайн] строка " + p.Login + ": " + e.Message); }
+                catch (Exception e) { Plugin.Trace("[онлайн] строка " + p.Login + ": " + e.Message); }
             }
 
             bool busy = OnlineList.Busy;

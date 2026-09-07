@@ -236,7 +236,7 @@ namespace NewAgeQoL
                 RemoteImageLoader.Instance.Load(
                     "https://files.nura.biz/site/images/things100x100/" + image + ".png",
                     sprite => { if (sprite != null) Icons[image] = sprite; },
-                    error => Plugin.Log?.LogWarning("[flasks] картинка «" + image + "» не загрузилась: " + error));
+                    error => Plugin.Trace("[flasks] картинка «" + image + "» не загрузилась: " + error));
             }
             catch { }
         }
