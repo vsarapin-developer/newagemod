@@ -93,14 +93,50 @@ namespace NewAgeQoL
             var view = CombatLocationView.Instance;
             var camera = view != null ? view.CombatCamera : null;
             if (camera == null) return 0;
-            var hits = Physics.RaycastAll(camera.ScreenPointToRay(Input.mousePosition), 1000f);
+            var ray = camera.ScreenPointToRay(Input.mousePosition);
+
+            var hits = Physics.RaycastAll(ray, 1000f);
             foreach (var hit in hits)
             {
                 if (hit.collider == null) continue;
                 var found = cd.FindCharacterByGameObject(hit.collider.gameObject);
                 if (found != null && found.UserId != 0) return found.UserId;
             }
-            return 0;
+
+            var wide = Physics.SphereCastAll(ray, 0.5f, 1000f);
+            foreach (var hit in wide)
+            {
+                if (hit.collider == null) continue;
+                var found = cd.FindCharacterByGameObject(hit.collider.gameObject);
+                if (found != null && found.UserId != 0) return found.UserId;
+            }
+
+            return Nearest(cd, camera);
+        }
+
+        private static int Nearest(ICombatData cd, Camera camera)
+        {
+            var all = cd.Characters;
+            if (all == null) return 0;
+            var mouse = (Vector2)Input.mousePosition;
+            float limit = Mathf.Max(48f, Screen.height * 0.06f);
+            int best = 0;
+            float nearest = limit;
+            foreach (var pair in all)
+            {
+                var ch = pair.Value;
+                if (ch == null || ch.UserId == 0) continue;
+                Vector3 world = ch.position;
+                var body = ch.CharacterCollider;
+                if (body != null) world = body.bounds.center;
+                var point = camera.WorldToScreenPoint(world);
+                if (point.z <= 0f) continue;
+                float gap = Vector2.Distance(mouse, new Vector2(point.x, point.y));
+                if (gap >= nearest) continue;
+                nearest = gap;
+                best = ch.UserId;
+            }
+            return best;
         }
 
         private static void Listen()
