@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using HarmonyLib;
 using Transport.Messages.Common.User;
 using UnityEngine;
 using UnityEngine.UI;
@@ -233,6 +234,8 @@ namespace NewAgeQoL
 
             try
             {
+                var sr = _panel != null ? AccessTools.Field(typeof(ChatUserListPanelContent), "ScrollRect")?.GetValue(_panel) as LoopScrollRect : null;
+                if (sr != null) sr.ClearCells();
                 _wrapper.BeginUpdate();
                 _wrapper.Clear();
                 foreach (var r in rows) _wrapper.AddItem(r);
