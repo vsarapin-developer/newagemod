@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
@@ -17,6 +17,8 @@ namespace NewAgeQoL
         internal int Rank;
         internal bool Vip;
         internal bool Admin;
+        internal bool Dealer;
+        internal string Rights = "";
     }
 
     internal static class OnlineList
@@ -169,8 +171,10 @@ namespace NewAgeQoL
                     Clan = Attr(a, "icon"),
                     Rank = Int(Attr(a, "rank")),
                     Vip = Attr(a, "vip") == "1",
-                    Admin = Attr(a, "admin").Length > 0,
+                    Dealer = Attr(a, "dealer") == "1",
+                    Rights = Attr(a, "admin"),
                 };
+                p.Admin = p.Rights.Length > 0;
                 if (p.Login.Length > 0) list.Add(p);
             }
             return list;

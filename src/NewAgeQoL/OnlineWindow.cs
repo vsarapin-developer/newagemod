@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Transport.Messages.Common.User;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -7,12 +8,13 @@ namespace NewAgeQoL
 {
     internal static class OnlineWindow
     {
-        private const float PanelW = 760f;
-        private const float PanelH = 680f;
-        private const float RowH = 26f;
+        private const float PanelW = 640f;
+        private const float PanelH = 700f;
 
-        private static Canvas _canvas;
-        private static Transform _list;
+        private static GameObject _canvasGo;
+        private static GameObject _panelGo;
+        private static ChatUserListPanelContent _panel;
+        private static ListWrapper<UserRowInfoMessage> _wrapper;
         private static Text _status;
         private static Text _title;
         private static Button _refresh;
@@ -21,11 +23,13 @@ namespace NewAgeQoL
         private static int _seenVersion = -1;
         private static float _pollAt;
 
-        internal static bool IsOpen => _canvas != null;
+        private static readonly Dictionary<string, int> ClassByName = BuildClasses();
+
+        internal static bool IsOpen => _canvasGo != null;
 
         internal static void Toggle()
         {
-            if (_canvas != null) { Close(); return; }
+            if (_canvasGo != null) { Close(); return; }
             Open();
         }
 
@@ -38,14 +42,25 @@ namespace NewAgeQoL
                 if (!OnlineList.Busy) OnlineList.Refresh();
                 Rebuild();
             }
-            catch (Exception e) { Plugin.Log?.LogError("[онлайн] окно: " + e.Message); Close(); }
+            catch (Exception e) { Plugin.Log?.LogError("[онлайн] окно: " + e); Close(); }
         }
 
         internal static void Close()
         {
-            if (_canvas != null) UnityEngine.Object.Destroy(_canvas.gameObject);
-            _canvas = null;
-            _list = null;
+            try
+            {
+                if (_panelGo != null) UnityEngine.Object.Destroy(_panelGo);
+                if (_canvasGo != null) CanvasFactory.ReleaseCanvas(ECanvasType.UserMenuWindow, _canvasGo);
+            }
+            catch (Exception e)
+            {
+                Plugin.Trace("[онлайн] закрытие: " + e.Message);
+                if (_canvasGo != null) UnityEngine.Object.Destroy(_canvasGo);
+            }
+            _canvasGo = null;
+            _panelGo = null;
+            _panel = null;
+            _wrapper = null;
             _status = null;
             _title = null;
             _refresh = null;
@@ -54,7 +69,8 @@ namespace NewAgeQoL
 
         internal static void Tick()
         {
-            if (_canvas == null) return;
+            if (_canvasGo == null) return;
+            if (_panelGo == null) { Close(); return; }
             if (Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
             if (Time.unscaledTime < _pollAt) return;
             _pollAt = Time.unscaledTime + 0.2f;
@@ -67,36 +83,24 @@ namespace NewAgeQoL
         private static void Build()
         {
             Close();
-            var go = new GameObject("QoLOnlineWindow", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-            _canvas = go.GetComponent<Canvas>();
-            _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            _canvas.sortingOrder = 790;
-            var scaler = go.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            var canvas = CanvasFactory.GenerateCanvas(ECanvasType.UserMenuWindow);
+            _canvasGo = canvas.gameObject;
 
-            var backGo = new GameObject("backdrop", typeof(RectTransform), typeof(Image), typeof(Button));
-            backGo.transform.SetParent(go.transform, false);
-            var brt = (RectTransform)backGo.transform;
-            brt.anchorMin = Vector2.zero; brt.anchorMax = Vector2.one; brt.offsetMin = Vector2.zero; brt.offsetMax = Vector2.zero;
-            backGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
-            backGo.GetComponent<Button>().onClick.AddListener(Close);
-
-            var panelGo = new GameObject("panel", typeof(RectTransform), typeof(Image));
-            panelGo.transform.SetParent(go.transform, false);
-            var prt = (RectTransform)panelGo.transform;
+            _panelGo = new GameObject("QoLOnlineWindow", typeof(RectTransform), typeof(Image));
+            _panelGo.transform.SetParent(canvas.transform, false);
+            var prt = (RectTransform)_panelGo.transform;
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
             prt.sizeDelta = new Vector2(PanelW, PanelH);
             prt.anchoredPosition = Vector2.zero;
-            panelGo.GetComponent<Image>().color = new Color(0.16f, 0.12f, 0.08f, 0.98f);
+            _panelGo.GetComponent<Image>().color = new Color(0.16f, 0.12f, 0.08f, 0.98f);
 
-            _title = Label(panelGo.transform, "Кто в игре", 22, FontStyle.Bold, new Color32(255, 224, 130, 255));
+            _title = Label(_panelGo.transform, "Кто в игре", 22, FontStyle.Bold, new Color32(255, 224, 130, 255));
             Place(_title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -44f), new Vector2(-60f, -8f));
             _title.alignment = TextAnchor.MiddleLeft;
 
             var closeGo = new GameObject("close", typeof(RectTransform), typeof(Image), typeof(Button));
-            closeGo.transform.SetParent(panelGo.transform, false);
+            closeGo.transform.SetParent(_panelGo.transform, false);
             var crt = (RectTransform)closeGo.transform;
             crt.anchorMin = crt.anchorMax = new Vector2(1f, 1f); crt.pivot = new Vector2(1f, 1f);
             crt.sizeDelta = new Vector2(34f, 34f); crt.anchoredPosition = new Vector2(-6f, -6f);
@@ -106,7 +110,7 @@ namespace NewAgeQoL
             Place(x.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
 
             var barGo = new GameObject("bar", typeof(RectTransform), typeof(HorizontalLayoutGroup));
-            barGo.transform.SetParent(panelGo.transform, false);
+            barGo.transform.SetParent(_panelGo.transform, false);
             Place((RectTransform)barGo.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -84f), new Vector2(-16f, -50f));
             var hlg = barGo.GetComponent<HorizontalLayoutGroup>();
             hlg.spacing = 10f;
@@ -114,57 +118,36 @@ namespace NewAgeQoL
             hlg.childForceExpandWidth = false;
             hlg.childForceExpandHeight = true;
 
-            _filter = MakeInput(barGo.transform, 300f, "поиск: ник, клан, класс");
-            _filter.onValueChanged.AddListener(v => { _query = (v ?? "").Trim().ToLowerInvariant(); Rebuild(); });
-
+            _filter = MakeInput(barGo.transform, 260f, "поиск: ник, клан, класс");
+            _filter.onValueChanged.AddListener(v => { _query = Norm(v); Rebuild(); });
             _refresh = MakeButton(barGo.transform, "Обновить", 120f, () => { if (!OnlineList.Busy) OnlineList.Refresh(); });
-
             _status = Label(barGo.transform, "", 14, FontStyle.Normal, new Color32(220, 205, 170, 255));
             _status.alignment = TextAnchor.MiddleLeft;
-            var sle = _status.gameObject.AddComponent<LayoutElement>();
-            sle.flexibleWidth = 1f;
+            _status.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
-            var headGo = new GameObject("head", typeof(RectTransform), typeof(Image));
-            headGo.transform.SetParent(panelGo.transform, false);
-            Place((RectTransform)headGo.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -116f), new Vector2(-16f, -90f));
-            headGo.GetComponent<Image>().color = new Color(0.3f, 0.22f, 0.12f, 1f);
-            FillRow(headGo.transform, "Игрок", "Ур.", "Класс", "Клан", "Ранг", "", true);
+            var areaGo = new GameObject("list", typeof(RectTransform), typeof(Image));
+            areaGo.transform.SetParent(_panelGo.transform, false);
+            Place((RectTransform)areaGo.transform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(12f, 12f), new Vector2(-12f, -92f));
+            areaGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.25f);
 
-            var scrollGo = new GameObject("scroll", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(RectMask2D));
-            scrollGo.transform.SetParent(panelGo.transform, false);
-            var srt = (RectTransform)scrollGo.transform;
-            Place(srt, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(16f, 14f), new Vector2(-16f, -118f));
-            scrollGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.25f);
-            var scroll = scrollGo.GetComponent<ScrollRect>();
-            scroll.horizontal = false;
-            scroll.vertical = true;
-            scroll.scrollSensitivity = 30f;
-            scroll.movementType = ScrollRect.MovementType.Clamped;
+            var prefab = VisualPrefabsHolder.Instance.ChatUserListPanelContentPrefab;
+            var go = UnityEngine.Object.Instantiate(prefab, areaGo.transform, false);
+            go.name = "QoLOnlineUserList";
+            _panel = go.GetComponent<ChatUserListPanelContent>();
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            rt.localScale = Vector3.one;
 
-            var contentGo = new GameObject("content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-            contentGo.transform.SetParent(scrollGo.transform, false);
-            var cont = (RectTransform)contentGo.transform;
-            cont.anchorMin = new Vector2(0f, 1f); cont.anchorMax = new Vector2(1f, 1f); cont.pivot = new Vector2(0.5f, 1f);
-            cont.offsetMin = Vector2.zero; cont.offsetMax = Vector2.zero;
-            var vlg = contentGo.GetComponent<VerticalLayoutGroup>();
-            vlg.spacing = 1f;
-            vlg.childForceExpandWidth = true;
-            vlg.childForceExpandHeight = false;
-            vlg.childControlHeight = true;
-            vlg.childControlWidth = true;
-            var fit = contentGo.GetComponent<ContentSizeFitter>();
-            fit.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-            fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-            scroll.content = cont;
-            scroll.viewport = srt;
-            _list = contentGo.transform;
+            _wrapper = new ListWrapper<UserRowInfoMessage>(new List<UserRowInfoMessage>());
+            var resolver = DependencyContainer.ResolveController<UserContextMenuController>().UserContextMenuResolver;
+            _panel.Initialize(_wrapper, resolver);
+            go.SetActive(true);
         }
 
         private static void Rebuild()
         {
-            if (_list == null) return;
-            for (int i = _list.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(_list.GetChild(i).gameObject);
-
+            if (_wrapper == null) return;
             var players = OnlineList.Players;
             players.Sort((a, b) =>
             {
@@ -172,71 +155,63 @@ namespace NewAgeQoL
                 return c != 0 ? c : string.Compare(a.Login, b.Login, StringComparison.OrdinalIgnoreCase);
             });
 
-            int shown = 0;
+            var rows = new List<UserRowInfoMessage>();
             foreach (var p in players)
             {
                 if (_query.Length > 0
-                    && p.Login.ToLowerInvariant().IndexOf(_query, StringComparison.Ordinal) < 0
-                    && p.Clan.ToLowerInvariant().IndexOf(_query, StringComparison.Ordinal) < 0
-                    && p.Class.ToLowerInvariant().IndexOf(_query, StringComparison.Ordinal) < 0) continue;
-                var rowGo = new GameObject("row", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
-                rowGo.transform.SetParent(_list, false);
-                rowGo.GetComponent<Image>().color = (shown & 1) == 0 ? new Color(1f, 1f, 1f, 0.04f) : new Color(1f, 1f, 1f, 0f);
-                var le = rowGo.GetComponent<LayoutElement>();
-                le.minHeight = RowH; le.preferredHeight = RowH;
-                string mark = (p.Admin ? "модер " : "") + (p.Vip ? "vip" : "");
-                FillRow(rowGo.transform, p.Login, p.Level > 0 ? p.Level.ToString() : "", p.Class, Clan(p.Clan), p.Rank > 0 ? p.Rank.ToString() : "", mark, false);
-                shown++;
+                    && Norm(p.Login).IndexOf(_query, StringComparison.Ordinal) < 0
+                    && Norm(p.Clan).IndexOf(_query, StringComparison.Ordinal) < 0
+                    && Norm(p.Class).IndexOf(_query, StringComparison.Ordinal) < 0) continue;
+                rows.Add(Row(p));
             }
 
-            if (_title != null) _title.text = "Кто в игре" + (players.Count > 0 ? ": " + players.Count : "") + (_query.Length > 0 ? " · показано " + shown : "");
-            if (_status != null) _status.text = OnlineList.Status;
-            if (_refresh != null) _refresh.interactable = !OnlineList.Busy;
-            if (players.Count == 0 && !OnlineList.Busy && !OnlineList.Configured)
+            try
             {
-                var t = Label(_list, "Укажи логин и пароль запасного аккаунта в настройках мода, раздел «Кто в игре».", 15, FontStyle.Normal, new Color32(240, 200, 160, 255));
-                var le = t.gameObject.AddComponent<LayoutElement>();
-                le.minHeight = 60f;
+                _wrapper.BeginUpdate();
+                _wrapper.Clear();
+                _wrapper.Content.AddRange(rows);
+                _wrapper.EndUpdate();
             }
+            catch (Exception e) { Plugin.Trace("[онлайн] список: " + e.Message); }
+
+            if (_title != null) _title.text = "Кто в игре" + (players.Count > 0 ? ": " + players.Count : "") + (_query.Length > 0 ? " · показано " + rows.Count : "");
+            if (_status != null)
+                _status.text = players.Count == 0 && !OnlineList.Busy && !OnlineList.Configured
+                    ? "Укажи запасной аккаунт в настройках мода, раздел «Кто в игре»"
+                    : OnlineList.Status;
+            if (_refresh != null) _refresh.interactable = !OnlineList.Busy;
         }
 
-        private static string Clan(string icon)
+        private static UserRowInfoMessage Row(OnlinePlayer p)
         {
-            if (string.IsNullOrEmpty(icon)) return "";
-            string s = icon;
-            if (s.EndsWith("_Small", StringComparison.OrdinalIgnoreCase)) s = s.Substring(0, s.Length - 6);
-            else if (s.EndsWith("_s", StringComparison.OrdinalIgnoreCase)) s = s.Substring(0, s.Length - 2);
-            return s;
+            var m = new UserRowInfoMessage(p.Id, p.Login, p.Level);
+            m.ClanIcon = string.IsNullOrEmpty(p.Clan) ? null : p.Clan;
+            m.RightsIcon = string.IsNullOrEmpty(p.Rights) ? null : p.Rights;
+            if (p.Vip) m.Vip = true;
+            if (p.Dealer) m.Dealer = true;
+            if (p.Rank > 0) m.Rank = p.Rank;
+            int cid;
+            if (ClassByName.TryGetValue(Norm(p.Class), out cid)) m.ClassId = cid;
+            return m;
         }
 
-        private static void FillRow(Transform row, string login, string level, string cls, string clan, string rank, string mark, bool head)
-        {
-            var hlg = row.gameObject.GetComponent<HorizontalLayoutGroup>() ?? row.gameObject.AddComponent<HorizontalLayoutGroup>();
-            hlg.padding = new RectOffset(8, 8, 2, 2);
-            hlg.spacing = 6f;
-            hlg.childAlignment = TextAnchor.MiddleLeft;
-            hlg.childForceExpandWidth = false;
-            hlg.childForceExpandHeight = true;
-            hlg.childControlWidth = true;
-            hlg.childControlHeight = true;
-            var style = head ? FontStyle.Bold : FontStyle.Normal;
-            var color = head ? new Color32(255, 224, 130, 255) : new Color32(240, 232, 210, 255);
-            Cell(row, login, 250f, style, color, TextAnchor.MiddleLeft);
-            Cell(row, level, 44f, style, color, TextAnchor.MiddleCenter);
-            Cell(row, cls, 130f, style, color, TextAnchor.MiddleLeft);
-            Cell(row, clan, 140f, style, color, TextAnchor.MiddleLeft);
-            Cell(row, rank, 70f, style, color, TextAnchor.MiddleRight);
-            Cell(row, mark, 70f, style, head ? color : new Color32(255, 200, 90, 255), TextAnchor.MiddleLeft);
-        }
+        private static string Norm(string s) => (s ?? "").Trim().ToLowerInvariant().Replace('ё', 'е');
 
-        private static void Cell(Transform row, string text, float width, FontStyle style, Color color, TextAnchor align)
+        private static Dictionary<string, int> BuildClasses()
         {
-            var t = Label(row, text, 15, style, color);
-            t.alignment = align;
-            t.horizontalOverflow = HorizontalWrapMode.Wrap;
-            t.verticalOverflow = VerticalWrapMode.Truncate;
-            var le = t.gameObject.AddComponent<LayoutElement>();
-            le.minWidth = width; le.preferredWidth = width;
+            var d = new Dictionary<string, int>();
+            string[][] names =
+            {
+                new[] { "рейнджер", "стрелок", "лучник", "егерь", "снайпер", "древний", "завоеватель" },
+                new[] { "варвар", "рубака", "гладиатор", "берсерк", "вождь", "жнец", "атаман" },
+                new[] { "мастер щита", "щитоносец", "легионер", "центурион", "чемпион", "монолит", "полководец" },
+                new[] { "джаггернаут", "защитник", "гвардеец", "рыцарь", "кавалер", "титан", "исполин" },
+                new[] { "жрец", "священник", "клирик", "крестоносец", "паладин", "епископ", "кардинал" },
+                new[] { "маг", "посвященный", "аколит", "адепт", "магистр", "патриарх", "властелин" },
+            };
+            for (int i = 0; i < names.Length; i++)
+                foreach (var n in names[i]) d[n] = i + 1;
+            return d;
         }
 
         private static InputField MakeInput(Transform host, float width, string placeholder)
