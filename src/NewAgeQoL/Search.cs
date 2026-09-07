@@ -284,6 +284,7 @@ namespace NewAgeQoL
             if (template != null)
             {
                 go = UnityEngine.Object.Instantiate(template.gameObject, host);
+                Clones.StripHotkeys(go, template.gameObject);
                 Strip(go);
             }
             else

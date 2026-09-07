@@ -119,6 +119,7 @@ namespace NewAgeQoL
 
                 var row = qty.transform.parent;
                 var rowGo = UnityEngine.Object.Instantiate(row.gameObject, row.parent);
+                Clones.StripHotkeys(rowGo, row.gameObject);
                 rowGo.name = "QoLLotsRow";
                 rowGo.transform.SetSiblingIndex(row.GetSiblingIndex() + 1);
                 rowGo.SetActive(true);
@@ -387,6 +388,7 @@ namespace NewAgeQoL
                 if (qty == null) return;
 
                 var go = UnityEngine.Object.Instantiate(qty.gameObject, qty.transform.parent);
+                Clones.StripHotkeys(go, qty.gameObject);
                 go.name = "QoLRemoveLotsField";
                 go.transform.SetSiblingIndex(qty.transform.GetSiblingIndex() + 1);
                 go.SetActive(true);

@@ -70,7 +70,7 @@ namespace NewAgeQoL
             {
                 Name = "QoLOnlineButton",
                 Col = 2,
-                Hint = () => OnlineList.Configured ? "Кто в игре" : "Кто в игре: укажи запасной аккаунт в настройках мода",
+                Hint = () => (OnlineList.Configured ? "Кто в игре" : "Кто в игре: укажи запасной аккаунт в настройках мода") + OnlineWindow.KeyHint(),
                 Enabled = () => Plugin.CfgOnlineButton == null || Plugin.CfgOnlineButton.Value,
                 Sprite = () => Pick(1, "assassin_list", "friends", "clan"),
                 Badge = () => OnlineList.Busy ? "…" : "",
@@ -577,6 +577,7 @@ namespace NewAgeQoL
             if (cell != null)
             {
                 go = Object.Instantiate(cell, parent);
+                Clones.StripHotkeys(go, cell);
                 go.SetActive(false);
                 Strip(go);
                 foreach (var tx in go.GetComponentsInChildren<Text>(true)) tx.gameObject.SetActive(false);

@@ -154,7 +154,7 @@ namespace NewAgeQoL
             {
                 if (_busy) return;
                 _busy = true;
-                _status = "Запрашиваю список…";
+                _status = "обновляю…";
                 _version++;
             }
             var t = new Thread(() => Work(login, pass, ver)) { IsBackground = true, Name = "QoLOnlineList" };

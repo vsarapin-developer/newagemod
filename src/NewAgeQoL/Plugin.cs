@@ -5,10 +5,11 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.7.6")]
+    [BepInPlugin(Guid, "New Age QoL", Version)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
+        public const string Version = "1.7.7";
 
         internal static ManualLogSource Log;
         internal static Plugin Instance;
@@ -56,6 +57,23 @@ namespace NewAgeQoL
         internal static ConfigEntry<string> CfgOnlineVersion;
         internal static ConfigEntry<string> CfgOnlineClanCache;
         internal static ConfigEntry<int> CfgLastCharacter;
+        internal static ConfigEntry<string> CfgOnlineWindow;
+        internal static ConfigEntry<string> CfgOnlineHotkey;
+        internal static ConfigEntry<bool> CfgFighterHint;
+        internal static ConfigEntry<bool> CfgEffectsButton;
+        internal static ConfigEntry<bool> CfgPmToasts;
+        internal static ConfigEntry<bool> CfgUpdateCheck;
+        internal static ConfigEntry<bool> CfgSounds;
+        internal static ConfigEntry<bool> CfgSoundPm;
+        internal static ConfigEntry<bool> CfgSoundFight;
+        internal static ConfigEntry<bool> CfgSoundRound;
+        internal static ConfigEntry<int> CfgPmToastSeconds;
+        internal static ConfigEntry<int> CfgPmToastMax;
+        internal static ConfigEntry<bool> CfgPmToastLeft;
+        internal static ConfigEntry<bool> CfgTeamToasts;
+        internal static ConfigEntry<bool> CfgSoundTeam;
+        internal static ConfigEntry<float> CfgPmToastOpacity;
+        internal static ConfigEntry<string> CfgEffectsWindow;
         internal static ConfigEntry<bool> CfgTravelButton;
         internal static ConfigEntry<string> CfgTravelSpots;
         internal static ConfigEntry<string> CfgTravelGates;
@@ -212,6 +230,38 @@ namespace NewAgeQoL
                 "Номер версии старого 2D-клиента, который мод называет серверу при входе запасным аккаунтом. Менять только если сервер отвечает «Обновите версию игры».");
             CfgOnlineClanCache = Config.Bind("Online", "ClanIconCache", "",
                 "Узнанные коды значков кланов для окна «Кто в игре» в виде «значок:код» через запятую. Заполняется само, чтобы значки появлялись сразу.");
+            CfgFighterHint = Config.Bind("Combat", "FighterHint", true,
+                "В бою при наведении мыши на бойца показывать подсказку, как в старом 2D-клиенте: имя, уровень, рейтинг, жизнь/мана/энергия и таблица эффектов с источником, силой и длительностью. Данные те же, что игра показывает сама (индикаторы и список состояний бойца).");
+            CfgEffectsButton = Config.Bind("Combat", "EffectsButton", true,
+                "Кнопка «Эффекты» в нижней панели боя, справа от боевых кнопок: открывает окно со списком эффектов выбранного бойца (или своего), которое не исчезает при уходе мыши и прокручивается, если эффектов много. Как в старом 2D-клиенте.");
+            CfgEffectsWindow = Config.Bind("Combat", "EffectsWindow", "",
+                "Положение окна «Эффекты» в виде «x;y». Заполняется само при перетаскивании.");
+            CfgUpdateCheck = Config.Bind("Mod", "CheckUpdates", true,
+                "Проверять при входе в игру, вышла ли новая версия мода. Мод запрашивает у GitHub описание последнего релиза и сравнивает номер версии. Ничего о тебе при этом не отправляется, обновление скачивается только по кнопке в окне «Что нового». Настройки мода при обновлении не трогаются, они лежат в отдельном файле.");
+            CfgSounds = Config.Bind("Sounds", "FlashSounds", true,
+                "Звуки из старого 2D-клиента: на личное сообщение, на начало боя и на окончание боевой фазы раунда. Играют через тот же канал, что звуки интерфейса игры, поэтому громкость из настроек игры на них действует. Штатный звук лички при этом отключается, чтобы не звучало дважды.");
+            CfgSoundPm = Config.Bind("Sounds", "PrivateMessage", true, "Звук личного сообщения: и когда пишут тебе, и когда пишешь ты.");
+            CfgSoundFight = Config.Bind("Sounds", "FightStart", true, "Звук при входе в бой.");
+            CfgSoundRound = Config.Bind("Sounds", "RoundStart", true, "Звук по окончании боевой фазы раунда.");
+            CfgPmToasts = Config.Bind("Chat", "PrivateToasts", true,
+                "Личные сообщения всплывают слева снизу, как уведомления на стриме: видно, кто и что написал, не открывая чат. Нажатие на уведомление открывает чат на вкладке «Приватно» с подставленным ником отправителя.");
+            CfgPmToastSeconds = Config.Bind("Chat", "PrivateToastSeconds", 8,
+                "Сколько секунд держать всплывающее личное сообщение на экране (2–120).");
+            CfgPmToastMax = Config.Bind("Chat", "PrivateToastMax", 5,
+                "Сколько всплывающих личных сообщений показывать одновременно, друг под другом (1–10). При переполнении самое старое убирается.");
+            CfgPmToastMax.Value = UnityEngine.Mathf.Clamp(CfgPmToastMax.Value, 1, 10);
+            CfgPmToastSeconds.Value = UnityEngine.Mathf.Clamp(CfgPmToastSeconds.Value, 2, 120);
+            CfgTeamToasts = Config.Bind("Chat", "TeamToasts", true,
+                "Сообщения командного чата тоже всплывают карточками (с синей полоской). Нажатие открывает чат на вкладке команды, ник не подставляется.");
+            CfgSoundTeam = Config.Bind("Sounds", "TeamMessage", true, "Звук сообщения командного чата, тот же, что у личного: и на чужие сообщения, и на свои.");
+            CfgPmToastLeft = Config.Bind("Chat", "PrivateToastLeft", false,
+                "Всплывающие личные сообщения слева снизу. ВЫКЛ — справа снизу.");
+            CfgPmToastOpacity = Config.Bind("Chat", "PrivateToastOpacity", 0.72f,
+                "Непрозрачность фона карточек личных сообщений, от 0.15 (почти прозрачные) до 1 (сплошной фон).");
+            CfgOnlineHotkey = Config.Bind("Online", "Hotkey", "F9",
+                "Клавиша, открывающая и закрывающая окно «Кто в игре» где угодно, в том числе в бою, где боковой панели с кнопкой нет. Задаётся в настройках мода: нажми на поле справа от строки и нажми нужную клавишу. Клавиши, уже занятые в настройках игры, назначить нельзя. Delete в режиме выбора убирает клавишу, тогда окно открывается только кнопкой.");
+            CfgOnlineWindow = Config.Bind("Online", "Window", "",
+                "Положение и высота окна «Кто в игре» в виде «x;y;высота». Заполняется само, когда окно двигаешь или тянешь за нижний край. Пусто — по центру, высота по умолчанию.");
             CfgLastCharacter = Config.Bind("Launch", "LastCharacter", 0,
                 "id персонажа, которым ты в последний раз входил в игру через этот клиент. Заполняется само. На экране выбора персонажа мод сразу показывает его, а не того, кто заходил последним по данным сервера (например, запасного для окна «Кто в игре»). 0 — как в игре.");
             CfgVerbose = Config.Bind("Log", "Verbose", false,
@@ -244,11 +294,15 @@ namespace NewAgeQoL
             if (CfgVerbose != null && CfgVerbose.Value) Log?.LogInfo(text);
         }
 
+        private static float _updateAt = 20f;
+
         private void Update()
         {
             SideButtons.Tick();
             Flasks.Tick();
             Settings.Tick();
+            Changelog.Tick();
+            if (_updateAt > 0f && UnityEngine.Time.unscaledTime > _updateAt) { _updateAt = 0f; Updater.CheckSilent(); }
             SlotSwap.Tick();
             ContractNumbers.Tick();
             Search.Tick();
@@ -257,6 +311,10 @@ namespace NewAgeQoL
             FlaskPicker.Tick();
             OnlineList.Tick();
             OnlineWindow.Tick();
+            FighterHint.Tick();
+            EffectsWindow.Tick();
+            PrivateToasts.Tick();
+            Sounds.Tick();
         }
     }
 }

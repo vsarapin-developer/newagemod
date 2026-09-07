@@ -21,6 +21,12 @@ namespace NewAgeQoL
 
         private sealed class BoolRow : RowDef { internal ConfigEntry<bool> Cfg; }
 
+        private sealed class SliderRow : RowDef { internal ConfigEntry<float> Cfg; internal float Min; internal float Max; internal bool Preview; }
+
+        private sealed class KeyRow : RowDef { internal ConfigEntry<string> Cfg; }
+
+        private sealed class ActionRow : RowDef { internal string ButtonText; internal Action Do; }
+
         private sealed class PickRow : RowDef { internal ConfigEntry<string> ByName; internal ConfigEntry<int> ById; internal System.Func<string> Display; }
 
         private sealed class ValueRow : RowDef
@@ -36,6 +42,10 @@ namespace NewAgeQoL
         {
             var rows = new List<RowDef>
             {
+                new Header { Title = "Мод" },
+                A("Что нового в версии " + Plugin.Version + (Updater.CanUpdate ? "   ·   вышла " + Updater.LatestVersion : ""), "Открыть", Changelog.Toggle),
+                B("Проверять обновления мода", Plugin.CfgUpdateCheck),
+
                 new Header { Title = "Кнопки" },
                 B("Кнопка возврата в Иллениум", Plugin.CfgTownButton),
                 B("Возврат в Иллениум ведёт на арену, к турнирам", Plugin.CfgTownTournament),
@@ -54,6 +64,8 @@ namespace NewAgeQoL
                 B("Контрприём на себя, когда в бою игроки", Plugin.CfgCounterAuto),
                 B("Обновлять контрприём на себе", Plugin.CfgCounterRefresh),
                 I("Раундов между контрприёмами", Plugin.CfgCounterRefreshRounds),
+                B("Подсказка по бойцу при наведении", Plugin.CfgFighterHint),
+                B("Кнопка «Эффекты» в бою", Plugin.CfgEffectsButton),
 
                 new Header { Title = "Карта" },
                 B("Номера точек внешнего мира", Plugin.CfgMapLabels),
@@ -74,10 +86,24 @@ namespace NewAgeQoL
                 B("Кнопка «Кто в игре»", Plugin.CfgOnlineButton),
                 S("Логин запасного аккаунта", Plugin.CfgOnlineLogin),
                 S("Пароль запасного аккаунта", Plugin.CfgOnlinePassword, secret: true),
+                K("Клавиша окна «Кто в игре»", Plugin.CfgOnlineHotkey),
 
                 new Header { Title = "Чат" },
                 B("Свои строки в логе зелёным", Plugin.CfgChatHighlight),
                 B("Прятать окно «Системное сообщение»", Plugin.CfgHideSystemBoxes),
+                B("Всплывающие личные сообщения", Plugin.CfgPmToasts),
+                B("Всплывающие сообщения командного чата", Plugin.CfgTeamToasts),
+                I("Секунд показа личного сообщения", Plugin.CfgPmToastSeconds, 2, 120),
+                I("Сколько сообщений в стопке (1–10)", Plugin.CfgPmToastMax, 1, 10),
+                B("Личные сообщения слева (иначе справа)", Plugin.CfgPmToastLeft),
+                Sl("Непрозрачность карточек", Plugin.CfgPmToastOpacity, 0.15f, 1f, preview: true),
+
+                new Header { Title = "Звуки" },
+                B("Звуки как во Flash", Plugin.CfgSounds),
+                B("Личное сообщение", Plugin.CfgSoundPm),
+                B("Командный чат", Plugin.CfgSoundTeam),
+                B("Начало боя", Plugin.CfgSoundFight),
+                B("Конец боевой фазы", Plugin.CfgSoundRound),
             };
             rows.RemoveAll(r => r == null);
             return rows;
@@ -103,6 +129,9 @@ namespace NewAgeQoL
         private static RowDef B(string title, ConfigEntry<bool> cfg) =>
             cfg == null ? null : new BoolRow { Title = title, Cfg = cfg };
 
+        private static RowDef Sl(string title, ConfigEntry<float> cfg, float min, float max, bool preview = false) =>
+            cfg == null ? null : new SliderRow { Title = title, Cfg = cfg, Min = min, Max = max, Preview = preview };
+
         private static RowDef S(string title, ConfigEntry<string> cfg, bool secret = false) =>
             cfg == null ? null : new ValueRow
             {
@@ -114,12 +143,18 @@ namespace NewAgeQoL
                 Secret = secret,
             };
 
-        private static RowDef I(string title, ConfigEntry<int> cfg) =>
+        private static RowDef A(string title, string buttonText, Action act) =>
+            new ActionRow { Title = title, ButtonText = buttonText, Do = act };
+
+        private static RowDef K(string title, ConfigEntry<string> cfg) =>
+            cfg == null ? null : new KeyRow { Title = title, Cfg = cfg };
+
+        private static RowDef I(string title, ConfigEntry<int> cfg, int min = int.MinValue, int max = int.MaxValue) =>
             cfg == null ? null : new ValueRow
             {
                 Title = title,
                 Get = () => cfg.Value.ToString(),
-                Set = v => { if (int.TryParse(v.Trim(), out int n)) cfg.Value = n; },
+                Set = v => { if (int.TryParse(v.Trim(), out int n)) cfg.Value = Mathf.Clamp(n, min, max); },
                 Remember = () => Remember(cfg),
                 Reset = () => cfg.Value = (int)cfg.DefaultValue,
             };
@@ -150,6 +185,8 @@ namespace NewAgeQoL
 
         internal static void Close(bool revert)
         {
+            if (Capturing) { _capCfg = null; _capBg = null; _capText = null; _capBtn = null; _capMsgUntil = 0f; }
+            Changelog.Close();
             if (revert) foreach (var u in _undo) { try { u(); } catch { } }
             if (_win != null) UnityEngine.Object.Destroy(_win);
             _win = null;
@@ -172,6 +209,7 @@ namespace NewAgeQoL
             if (prefab == null) { Plugin.Log?.LogWarning("[settings] окно горячих клавиш не найдено."); return; }
 
             _win = UnityEngine.Object.Instantiate(prefab);
+            Clones.StripHotkeys(_win, prefab);
             var dlg = _win.GetComponent<HotkeysDialog>();
             if (dlg == null) { Plugin.Log?.LogWarning("[settings] в окне нет HotkeysDialog."); Close(); return; }
 
@@ -374,6 +412,69 @@ namespace NewAgeQoL
                 return;
             }
 
+            if (def is SliderRow sl)
+            {
+                Remember(sl.Cfg);
+                if (background == null || value == null) return;
+                if (button != null) UnityEngine.Object.DestroyImmediate(button);
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                var slider = MakeSlider(background, sl.Min, sl.Max, sl.Cfg.Value);
+                value.gameObject.SetActive(false);
+                Image pbg = null; Shadow psh = null;
+                if (sl.Preview)
+                {
+                    try { PreviewRow(rowPrefab, container, go.transform.GetSiblingIndex() + 1, def.Title, sl.Cfg.Value, out pbg, out psh); }
+                    catch (Exception e) { Plugin.Trace("[settings] превью карточки: " + e.Message); }
+                }
+                if (slider != null)
+                {
+                    slider.onValueChanged.AddListener(v =>
+                    {
+                        sl.Cfg.Value = v;
+                        Plugin.Trace("[settings] " + def.Title + " = " + v.ToString("0.00", ci));
+                        if (pbg != null) PrivateToasts.SetOpacity(pbg, psh, v);
+                        if (sl.Preview) PrivateToasts.ApplyOpacity(v);
+                    });
+                    _refresh.Add(() => { slider.SetValueWithoutNotify(sl.Cfg.Value); if (pbg != null) PrivateToasts.SetOpacity(pbg, psh, sl.Cfg.Value); });
+                }
+                _reset.Add(() => sl.Cfg.Value = (float)sl.Cfg.DefaultValue);
+                return;
+            }
+
+            if (def is ActionRow act)
+            {
+                if (value == null) return;
+                value.text = act.ButtonText;
+                value.resizeTextForBestFit = true;
+                value.resizeTextMinSize = 8;
+                value.resizeTextMaxSize = value.fontSize;
+                if (button != null)
+                {
+                    button.onClick.RemoveAllListeners();
+                    button.onClick.AddListener(() => act.Do());
+                }
+                return;
+            }
+
+            if (def is KeyRow kr)
+            {
+                Remember(kr.Cfg);
+                if (background == null || value == null) return;
+                value.text = KeyName(kr.Cfg.Value);
+                value.resizeTextForBestFit = true;
+                value.resizeTextMinSize = 8;
+                value.resizeTextMaxSize = value.fontSize;
+                value.horizontalOverflow = HorizontalWrapMode.Wrap;
+                if (button != null)
+                {
+                    button.onClick.RemoveAllListeners();
+                    button.onClick.AddListener(() => StartCapture(kr.Cfg, background, value, button));
+                }
+                _refresh.Add(() => { if (!Capturing && value != null) value.text = KeyName(kr.Cfg.Value); });
+                _reset.Add(() => kr.Cfg.Value = (string)kr.Cfg.DefaultValue);
+                return;
+            }
+
             if (def is PickRow pick)
             {
                 Remember(pick.ByName);
@@ -417,8 +518,256 @@ namespace NewAgeQoL
             });
         }
 
+        private static void PreviewRow(GameObject rowPrefab, Transform container, int index, string title, float opacity, out Image pbg, out Shadow psh)
+        {
+            pbg = null; psh = null;
+            var go = UnityEngine.Object.Instantiate(rowPrefab, container, worldPositionStays: false);
+            go.name = "MvlPreview";
+            go.transform.SetSiblingIndex(index);
+            var widget = go.GetComponent<HotkeyWidget>();
+            Text label = null, value = null;
+            Image background = null;
+            Button button = null;
+            if (widget != null)
+            {
+                label = Field<Text>(widget, "LabelText");
+                value = Field<Text>(widget, "KeyText");
+                background = Field<Image>(widget, "KeyBackground");
+                button = Field<Button>(widget, "Button");
+                UnityEngine.Object.Destroy(widget);
+            }
+            if (button != null) UnityEngine.Object.DestroyImmediate(button);
+            if (label != null)
+            {
+                label.text = title;
+                label.color = new Color(0f, 0f, 0f, 0f);
+                label.raycastTarget = false;
+            }
+            if (value != null) value.gameObject.SetActive(false);
+            if (background == null) { UnityEngine.Object.Destroy(go); return; }
+            background.enabled = false;
+            background.raycastTarget = false;
+            foreach (var g in background.GetComponentsInChildren<Graphic>(true)) if (g != background) g.enabled = false;
+
+            const float rowH = 88f;
+            var rt = (RectTransform)go.transform;
+            rt.sizeDelta = new Vector2(rt.sizeDelta.x, rowH);
+            var le = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
+            le.minHeight = rowH; le.preferredHeight = rowH;
+            var hl = go.GetComponent<HorizontalOrVerticalLayoutGroup>();
+            if (hl != null)
+            {
+                int col = (int)hl.childAlignment % 3;
+                hl.childAlignment = (TextAnchor)(3 + col);
+            }
+            else
+            {
+                var brt = background.rectTransform;
+                float h = brt.rect.height;
+                brt.anchorMin = new Vector2(brt.anchorMin.x, 0.5f);
+                brt.anchorMax = new Vector2(brt.anchorMax.x, 0.5f);
+                brt.pivot = new Vector2(brt.pivot.x, 0.5f);
+                brt.sizeDelta = new Vector2(brt.sizeDelta.x, h);
+                brt.anchoredPosition = new Vector2(brt.anchoredPosition.x, 0f);
+            }
+
+            var card = PrivateToasts.BuildCard(background.transform, "Никнейм", "текст сообщения", opacity, false, out pbg, out psh);
+            var crt = (RectTransform)card.transform;
+            crt.anchorMin = new Vector2(0f, 0.5f);
+            crt.anchorMax = new Vector2(1f, 0.5f);
+            crt.pivot = new Vector2(0.5f, 0.5f);
+            crt.offsetMin = new Vector2(-120f, 0f);
+            crt.offsetMax = new Vector2(0f, 0f);
+            var cle = card.GetComponent<LayoutElement>();
+            cle.minWidth = 0f; cle.preferredWidth = 0f;
+            var cb = card.GetComponent<Button>();
+            if (cb != null) cb.interactable = false;
+            var cg = card.GetComponent<CanvasGroup>();
+            if (cg != null) cg.blocksRaycasts = false;
+        }
+
+        private static Slider MakeSlider(Image background, float min, float max, float current)
+        {
+            Slider slider = null;
+            try
+            {
+                Slider proto = null;
+                foreach (var one in Resources.FindObjectsOfTypeAll<Slider>())
+                {
+                    if (one == null || !one.gameObject.scene.IsValid()) continue;
+                    if (_win != null && one.transform.IsChildOf(_win.transform)) continue;
+                    if (one.direction != Slider.Direction.LeftToRight) continue;
+                    proto = one;
+                    break;
+                }
+                if (proto != null)
+                {
+                    var go = UnityEngine.Object.Instantiate(proto.gameObject, background.transform, false);
+                    Clones.StripHotkeys(go, proto.gameObject);
+                    go.name = "MvlSlider";
+                    foreach (var c in go.GetComponentsInChildren<MonoBehaviour>(true))
+                    {
+                        if (c == null || c is Slider) continue;
+                        string ns = c.GetType().Namespace ?? "";
+                        if (!ns.StartsWith("UnityEngine")) UnityEngine.Object.Destroy(c);
+                    }
+                    var rt = (RectTransform)go.transform;
+                    rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.pivot = new Vector2(0.5f, 0.5f);
+                    rt.offsetMin = new Vector2(10f, 6f); rt.offsetMax = new Vector2(-10f, -6f);
+                    rt.localScale = Vector3.one;
+                    slider = go.GetComponent<Slider>();
+                    bool hit = false;
+                    foreach (var g in go.GetComponentsInChildren<Graphic>(true)) hit |= g.raycastTarget;
+                    if (!hit) foreach (var g in go.GetComponentsInChildren<Graphic>(true)) g.raycastTarget = true;
+                    slider.onValueChanged = new Slider.SliderEvent();
+                    slider.wholeNumbers = false;
+                    slider.minValue = min; slider.maxValue = max;
+                    slider.SetValueWithoutNotify(current);
+                    slider.interactable = true;
+                    go.SetActive(true);
+                    return slider;
+                }
+            }
+            catch (Exception e) { Plugin.Trace("[settings] ползунок игры не взялся: " + e.Message); }
+
+            var sgo = new GameObject("MvlSlider", typeof(RectTransform), typeof(Slider));
+            sgo.transform.SetParent(background.transform, false);
+            var srt = (RectTransform)sgo.transform;
+            srt.anchorMin = Vector2.zero; srt.anchorMax = Vector2.one;
+            srt.offsetMin = new Vector2(10f, 8f); srt.offsetMax = new Vector2(-10f, -8f);
+            var track = new GameObject("track", typeof(RectTransform), typeof(Image));
+            track.transform.SetParent(sgo.transform, false);
+            var trt = (RectTransform)track.transform;
+            trt.anchorMin = new Vector2(0f, 0.5f); trt.anchorMax = new Vector2(1f, 0.5f); trt.pivot = new Vector2(0.5f, 0.5f);
+            trt.offsetMin = new Vector2(0f, -3f); trt.offsetMax = new Vector2(0f, 3f);
+            track.GetComponent<Image>().color = new Color(0.25f, 0.17f, 0.08f, 0.9f);
+            var fillArea = new GameObject("fill", typeof(RectTransform), typeof(Image));
+            fillArea.transform.SetParent(track.transform, false);
+            var frt = (RectTransform)fillArea.transform;
+            frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
+            fillArea.GetComponent<Image>().color = new Color(0.85f, 0.62f, 0.2f, 1f);
+            var handle = new GameObject("handle", typeof(RectTransform), typeof(Image));
+            handle.transform.SetParent(sgo.transform, false);
+            var hrt = (RectTransform)handle.transform;
+            hrt.sizeDelta = new Vector2(14f, 0f);
+            hrt.anchorMin = new Vector2(0f, 0f); hrt.anchorMax = new Vector2(0f, 1f);
+            handle.GetComponent<Image>().color = new Color(0.98f, 0.9f, 0.7f, 1f);
+            slider = sgo.GetComponent<Slider>();
+            slider.fillRect = frt;
+            slider.handleRect = hrt;
+            slider.targetGraphic = handle.GetComponent<Image>();
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.minValue = min; slider.maxValue = max;
+            slider.SetValueWithoutNotify(current);
+            return slider;
+        }
+
+        private static ConfigEntry<string> _capCfg;
+        private static Text _capText;
+        private static Image _capBg;
+        private static Button _capBtn;
+        private static Color _capTextColor;
+        private static Color _capBgColor;
+        private static float _capMsgUntil;
+
+        internal static bool Capturing => _capCfg != null;
+
+        private static string KeyName(string spec)
+        {
+            spec = (spec ?? "").Trim();
+            return spec.Length > 0 ? spec : "нет";
+        }
+
+        private static void StartCapture(ConfigEntry<string> cfg, Image bg, Text text, Button btn)
+        {
+            if (Capturing) return;
+            _capCfg = cfg; _capBg = bg; _capText = text; _capBtn = btn;
+            _capTextColor = text.color; _capBgColor = bg.color;
+            _capMsgUntil = 0f;
+            bg.color = Color.black;
+            text.color = new Color32(255, 216, 134, 255);
+            text.text = "нажмите клавишу";
+            if (btn != null) btn.interactable = false;
+        }
+
+        private static void StopCapture()
+        {
+            try
+            {
+                if (_capBg != null) _capBg.color = _capBgColor;
+                if (_capText != null)
+                {
+                    _capText.color = _capTextColor;
+                    _capText.text = KeyName(_capCfg != null ? _capCfg.Value : "");
+                }
+                if (_capBtn != null) _capBtn.interactable = true;
+            }
+            catch { }
+            _capCfg = null; _capBg = null; _capText = null; _capBtn = null; _capMsgUntil = 0f;
+        }
+
+        private static string TakenBy(KeyCode key)
+        {
+            try
+            {
+                var dispatcher = HotkeyDispatcher.Instance;
+                var entries = dispatcher != null ? dispatcher.HotkeyEntries : null;
+                if (entries == null) return null;
+                foreach (var entry in entries)
+                {
+                    if (entry == null || entry.KeyCode != key) continue;
+                    string label = "hotkey.action." + (int)entry.ActionType;
+                    string name = null;
+                    try { name = ResourceStrings.GetString(label); } catch { }
+                    if (string.IsNullOrEmpty(name) || name == label) name = entry.ActionType.ToString();
+                    return name;
+                }
+            }
+            catch (Exception e) { Plugin.Trace("[settings] клавиши игры: " + e.Message); }
+            return null;
+        }
+
+        private static void CaptureTick()
+        {
+            if (!Capturing) return;
+            if (_capMsgUntil > 0f)
+            {
+                if (Time.unscaledTime < _capMsgUntil) return;
+                StopCapture();
+                return;
+            }
+            if (!Input.anyKeyDown) return;
+            foreach (KeyCode key in Enum.GetValues(typeof(KeyCode)))
+            {
+                if (key >= KeyCode.Mouse0 && key <= KeyCode.Mouse6) continue;
+                if (!Input.GetKeyDown(key)) continue;
+                if (key == KeyCode.Escape) { StopCapture(); return; }
+                if (key == KeyCode.Delete || key == KeyCode.Backspace)
+                {
+                    _capCfg.Value = "";
+                    StopCapture();
+                    return;
+                }
+                string busy = TakenBy(key);
+                if (busy != null)
+                {
+                    if (_capText != null)
+                    {
+                        _capText.color = new Color32(255, 120, 100, 255);
+                        _capText.text = "занято: " + busy;
+                    }
+                    _capMsgUntil = Time.unscaledTime + 2f;
+                    return;
+                }
+                _capCfg.Value = key.ToString();
+                StopCapture();
+                return;
+            }
+        }
+
         internal static void Tick()
         {
+            CaptureTick();
             if (_win != null) Stretch();
         }
 
@@ -461,6 +810,29 @@ namespace NewAgeQoL
         }
     }
 
+    [HarmonyPatch(typeof(HotkeyDispatcher), "Update")]
+    public static class SettingsKeyCapturePatch
+    {
+        private static bool Prefix()
+        {
+            if (Settings.Capturing) return false;
+            try
+            {
+                if (Input.GetKeyDown(KeyCode.Escape))
+                {
+                    if (Changelog.EscapeClose()) return false;
+                    if (ModalDialogList.IsEmpty())
+                    {
+                        if (OnlineWindow.EscapeClose()) return false;
+                        if (EffectsWindow.EscapeClose()) return false;
+                    }
+                }
+            }
+            catch (Exception e) { Plugin.Trace("[settings] escape: " + e.Message); }
+            return true;
+        }
+    }
+
     [HarmonyPatch(typeof(SetupDialog), "Start")]
     public static class ModSettingsButtonPatch
     {
@@ -473,6 +845,7 @@ namespace NewAgeQoL
 
                 var src = (RectTransform)reset.transform;
                 var go = UnityEngine.Object.Instantiate(reset.gameObject, src.parent);
+                Clones.StripHotkeys(go, reset.gameObject);
                 go.name = "MvlSettingsButton";
                 var rt = (RectTransform)go.transform;
                 rt.anchorMin = src.anchorMin; rt.anchorMax = src.anchorMax; rt.pivot = src.pivot;
