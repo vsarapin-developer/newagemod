@@ -9,32 +9,27 @@ namespace NewAgeQoL
 {
     internal static class OnlineWindow
     {
-        private const float WinW = 560f;
-        private const float WinH = 720f;
-        private const float BarH = 40f;
-
-        private static GameObject _canvasGo;
-        private static GameObject _winGo;
-        private static ChatUserListPanelContent _panel;
+        private static SummonPlayerDialog _dlg;
+        private static UserRowWidgetManager _grid;
         private static ListWrapper<UserRowInfoMessage> _wrapper;
-        private static Text _header;
+        private static Text _caption;
         private static Text _status;
+        private static Text _empty;
+        private static GameObject _loading;
+        private static GameObject _scroller;
         private static Button _refresh;
         private static InputField _filter;
         private static string _query = "";
         private static int _seenVersion = -1;
         private static float _pollAt;
-        private static readonly Action CloseAction = Close;
-        private static bool _registered;
         private static readonly Dictionary<string, string> RightsNames = new Dictionary<string, string>();
-
         private static readonly Dictionary<string, int> ClassByName = BuildClasses();
 
-        internal static bool IsOpen => _canvasGo != null;
+        internal static bool IsOpen => _dlg != null;
 
         internal static void Toggle()
         {
-            if (_canvasGo != null) { Close(); return; }
+            if (_dlg != null) { Close(); return; }
             Open();
         }
 
@@ -43,8 +38,6 @@ namespace NewAgeQoL
             try
             {
                 Build();
-                ModalDialogList.Add(CloseAction);
-                _registered = true;
                 _seenVersion = -1;
                 if (!OnlineList.Busy) OnlineList.Refresh();
                 Rebuild();
@@ -54,31 +47,28 @@ namespace NewAgeQoL
 
         internal static void Close()
         {
-            if (_registered) { try { ModalDialogList.Remove(CloseAction); } catch { } _registered = false; }
-            try
-            {
-                if (_winGo != null) UnityEngine.Object.Destroy(_winGo);
-                if (_canvasGo != null) CanvasFactory.ReleaseCanvas(ECanvasType.UserMenuWindow, _canvasGo);
-            }
-            catch (Exception e)
-            {
-                Plugin.Trace("[онлайн] закрытие: " + e.Message);
-                if (_canvasGo != null) UnityEngine.Object.Destroy(_canvasGo);
-            }
-            _canvasGo = null;
-            _winGo = null;
-            _panel = null;
+            var d = _dlg;
+            Forget();
+            if (d != null) { try { d.Close(); } catch { } }
+        }
+
+        private static void Forget()
+        {
+            _dlg = null;
+            _grid = null;
             _wrapper = null;
-            _header = null;
+            _caption = null;
             _status = null;
+            _empty = null;
+            _loading = null;
+            _scroller = null;
             _refresh = null;
             _filter = null;
         }
 
         internal static void Tick()
         {
-            if (_canvasGo == null) return;
-            if (_winGo == null) { Close(); return; }
+            if (_dlg == null) return;
             if (Time.unscaledTime < _pollAt) return;
             _pollAt = Time.unscaledTime + 0.2f;
             int v = OnlineList.Version;
@@ -87,88 +77,84 @@ namespace NewAgeQoL
             Rebuild();
         }
 
+        private static T Field<T>(object host, string name) where T : class =>
+            AccessTools.Field(host.GetType(), name)?.GetValue(host) as T
+            ?? AccessTools.Field(typeof(SummonPlayerDialog), name)?.GetValue(host) as T;
+
         private static void Build()
         {
             Close();
-            var canvas = CanvasFactory.GenerateCanvas(ECanvasType.UserMenuWindow);
-            _canvasGo = canvas.gameObject;
+            var dlg = DialogFactory.ShowSummonPlayerDialog();
+            if (dlg == null) throw new Exception("диалог не создан");
+            _dlg = dlg;
+            dlg.OnDialogDestroy += () => { if (ReferenceEquals(_dlg, dlg)) Forget(); };
 
-            var prefab = VisualPrefabsHolder.Instance.DesktopChatUserWindowPrefab;
-            _winGo = UnityEngine.Object.Instantiate(prefab, canvas.transform, false);
-            _winGo.name = "QoLOnlineWindow";
-            var wrt = (RectTransform)_winGo.transform;
-            wrt.anchorMin = wrt.anchorMax = new Vector2(0.5f, 0.5f);
-            wrt.pivot = new Vector2(0.5f, 0.5f);
-            wrt.sizeDelta = new Vector2(WinW, WinH);
-            wrt.anchoredPosition = Vector2.zero;
-            wrt.localScale = Vector3.one;
-            var wle = _winGo.GetComponent<LayoutElement>();
-            if (wle != null) wle.ignoreLayout = true;
+            _caption = Field<Text>(dlg, "Caption");
+            _grid = Field<UserRowWidgetManager>(dlg, "WidgetManager");
+            _empty = Field<Text>(dlg, "NoAviablePlayersText");
+            var loading = Field<Transform>(dlg, "LoadingIndicator");
+            _loading = loading != null ? loading.gameObject : null;
+            var scroller = Field<Transform>(dlg, "ScrollerAreaTransform");
+            _scroller = scroller != null ? scroller.gameObject : null;
+            var button = Field<Button>(dlg, "Button");
+            if (_grid == null) throw new Exception("в диалоге нет списка");
 
-            var win = _winGo.GetComponent<StandardContentWindowPanel>();
-            win.SetWithoutTabsPanelHeader("gui.chat.user_list.header");
-            var tab = AccessTools.Field(typeof(StandardContentWindowPanel), "TabPanel")?.GetValue(win) as TabPanel;
-            _header = tab != null ? tab.TabHeaderText : null;
-            var parent = AccessTools.Field(typeof(StandardContentWindowPanel), "PanelContentParent")?.GetValue(win) as Transform;
-            if (parent == null) throw new Exception("у окна нет контейнера содержимого");
-            bool layout = parent.GetComponent<LayoutGroup>() != null;
-
-            var closeGo = new GameObject("close", typeof(RectTransform), typeof(Image), typeof(Button));
-            closeGo.transform.SetParent(_winGo.transform, false);
-            var crt = (RectTransform)closeGo.transform;
-            crt.anchorMin = crt.anchorMax = new Vector2(1f, 1f); crt.pivot = new Vector2(1f, 1f);
-            crt.sizeDelta = new Vector2(30f, 30f); crt.anchoredPosition = new Vector2(-4f, -4f);
-            closeGo.GetComponent<Image>().color = new Color(0.65f, 0.15f, 0.1f, 1f);
-            closeGo.GetComponent<Button>().onClick.AddListener(Close);
-            var x = Label(closeGo.transform, "X", 18, FontStyle.Bold, Color.white);
-            Place(x.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-
-            var content = UnityEngine.Object.Instantiate(VisualPrefabsHolder.Instance.ChatUserListPanelContentPrefab);
-            content.name = "QoLOnlineUserList";
-            _panel = content.GetComponent<ChatUserListPanelContent>();
-            _wrapper = new ListWrapper<UserRowInfoMessage>(new List<UserRowInfoMessage>());
             var resolver = DependencyContainer.ResolveController<UserContextMenuController>().UserContextMenuResolver;
-            _panel.Initialize(_wrapper, resolver);
-            win.AddPanelContent(_panel);
-            content.SetActive(true);
+            _grid.ContextMenuResolver = resolver;
+            _grid.OnItemClick += delegate { Close(); };
+            _wrapper = new ListWrapper<UserRowInfoMessage>(new List<UserRowInfoMessage>());
+            _grid.DataProvider = _wrapper;
+
+            Transform barHost = dlg.transform;
+            RectTransform slot = null;
+            if (button != null)
+            {
+                slot = button.transform as RectTransform;
+                barHost = button.transform.parent;
+                button.gameObject.SetActive(false);
+            }
 
             var barGo = new GameObject("QoLOnlineBar", typeof(RectTransform), typeof(HorizontalLayoutGroup));
-            barGo.transform.SetParent(parent, false);
-            barGo.transform.SetAsFirstSibling();
-            var hlg = barGo.GetComponent<HorizontalLayoutGroup>();
-            hlg.padding = new RectOffset(6, 6, 4, 4);
-            hlg.spacing = 8f;
-            hlg.childAlignment = TextAnchor.MiddleLeft;
-            hlg.childForceExpandWidth = false;
-            hlg.childForceExpandHeight = true;
-
-            var crt2 = (RectTransform)content.transform;
-            if (layout)
+            barGo.transform.SetParent(barHost, false);
+            var brt = (RectTransform)barGo.transform;
+            if (slot != null)
             {
-                var ble = barGo.AddComponent<LayoutElement>();
-                ble.preferredHeight = BarH; ble.minHeight = BarH; ble.flexibleWidth = 1f;
-                var cle = content.GetComponent<LayoutElement>() ?? content.AddComponent<LayoutElement>();
-                cle.flexibleHeight = 1f; cle.flexibleWidth = 1f;
+                brt.anchorMin = slot.anchorMin; brt.anchorMax = slot.anchorMax; brt.pivot = slot.pivot;
+                brt.anchoredPosition = slot.anchoredPosition;
+                brt.sizeDelta = new Vector2(Mathf.Max(slot.sizeDelta.x, 420f), Mathf.Max(slot.sizeDelta.y, 36f));
+                var sle = slot.GetComponent<LayoutElement>();
+                if (sle != null)
+                {
+                    var ble = barGo.AddComponent<LayoutElement>();
+                    ble.preferredHeight = Mathf.Max(sle.preferredHeight, 36f);
+                    ble.minHeight = ble.preferredHeight;
+                    ble.flexibleWidth = 1f;
+                }
+                brt.SetSiblingIndex(slot.GetSiblingIndex());
             }
             else
             {
-                Place((RectTransform)barGo.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -BarH), new Vector2(0f, 0f));
-                crt2.anchorMin = Vector2.zero; crt2.anchorMax = Vector2.one;
-                crt2.offsetMin = Vector2.zero; crt2.offsetMax = new Vector2(0f, -BarH);
-                crt2.localScale = Vector3.one;
+                brt.anchorMin = new Vector2(0f, 0f); brt.anchorMax = new Vector2(1f, 0f); brt.pivot = new Vector2(0.5f, 0f);
+                brt.offsetMin = new Vector2(16f, 12f); brt.offsetMax = new Vector2(-16f, 48f);
             }
+            var hlg = barGo.GetComponent<HorizontalLayoutGroup>();
+            hlg.spacing = 8f;
+            hlg.childAlignment = TextAnchor.MiddleCenter;
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = true;
 
-            _filter = MakeInput(barGo.transform, 200f, "поиск по нику");
+            _filter = MakeInput(barGo.transform, 190f, "поиск по нику");
             _filter.onValueChanged.AddListener(v => { _query = Norm(v); Rebuild(); });
             _refresh = MakeButton(barGo.transform, "Обновить", 110f, () => { if (!OnlineList.Busy) OnlineList.Refresh(); });
-            _status = Label(barGo.transform, "", 13, FontStyle.Normal, new Color(0.25f, 0.15f, 0.05f, 1f));
+            _status = Label(barGo.transform, "", 13, FontStyle.Normal, new Color(0.3f, 0.18f, 0.06f, 1f));
             _status.alignment = TextAnchor.MiddleLeft;
-            _status.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            var stle = _status.gameObject.AddComponent<LayoutElement>();
+            stle.flexibleWidth = 1f; stle.minWidth = 120f;
         }
 
         private static void Rebuild()
         {
-            if (_wrapper == null) return;
+            if (_dlg == null || _wrapper == null) return;
             var players = OnlineList.Players;
             players.Sort((a, b) =>
             {
@@ -194,12 +180,18 @@ namespace NewAgeQoL
             }
             catch (Exception e) { Plugin.Trace("[онлайн] список: " + e.Message); }
 
-            if (_header != null) _header.text = "Кто в игре" + (players.Count > 0 ? ": " + players.Count : "") + (_query.Length > 0 ? " (" + rows.Count + ")" : "");
-            if (_status != null)
-                _status.text = players.Count == 0 && !OnlineList.Busy && !OnlineList.Configured
-                    ? "Укажи запасной аккаунт в настройках мода"
-                    : OnlineList.Status;
-            if (_refresh != null) _refresh.interactable = !OnlineList.Busy;
+            bool busy = OnlineList.Busy;
+            bool nothing = players.Count == 0;
+            if (_caption != null) _caption.text = "Кто в игре" + (players.Count > 0 ? ": " + players.Count : "") + (_query.Length > 0 ? " (" + rows.Count + ")" : "");
+            if (_status != null) _status.text = OnlineList.Status;
+            if (_refresh != null) _refresh.interactable = !busy;
+            if (_loading != null) _loading.SetActive(busy && nothing);
+            if (_scroller != null) _scroller.SetActive(!nothing);
+            if (_empty != null)
+            {
+                _empty.gameObject.SetActive(nothing && !busy);
+                _empty.text = OnlineList.Configured ? OnlineList.Status : "Укажи логин и пароль запасного аккаунта в настройках мода, раздел «Кто в игре»";
+            }
         }
 
         private static UserRowInfoMessage Row(OnlinePlayer p)
@@ -260,16 +252,16 @@ namespace NewAgeQoL
             var go = new GameObject("filter", typeof(RectTransform), typeof(Image), typeof(InputField), typeof(LayoutElement));
             go.transform.SetParent(host, false);
             var img = go.GetComponent<Image>();
-            img.color = new Color(1f, 1f, 1f, 0.55f);
+            img.color = new Color(0f, 0f, 0f, 0.55f);
             var le = go.GetComponent<LayoutElement>();
-            le.preferredWidth = width; le.minWidth = width; le.preferredHeight = 30f;
+            le.preferredWidth = width; le.minWidth = width; le.preferredHeight = 32f;
 
-            var txt = Label(go.transform, "", 15, FontStyle.Normal, new Color(0.1f, 0.06f, 0.02f, 1f));
+            var txt = Label(go.transform, "", 16, FontStyle.Normal, Color.white);
             txt.alignment = TextAnchor.MiddleLeft;
             txt.supportRichText = false;
             Place(txt.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(8f, 3f), new Vector2(-8f, -3f));
 
-            var ph = Label(go.transform, placeholder, 15, FontStyle.Italic, new Color(0.1f, 0.06f, 0.02f, 0.45f));
+            var ph = Label(go.transform, placeholder, 16, FontStyle.Italic, new Color(1f, 1f, 1f, 0.4f));
             ph.alignment = TextAnchor.MiddleLeft;
             Place(ph.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(8f, 3f), new Vector2(-8f, -3f));
 
@@ -278,6 +270,8 @@ namespace NewAgeQoL
             input.textComponent = txt;
             input.placeholder = ph;
             input.lineType = InputField.LineType.SingleLine;
+            input.caretColor = Color.white;
+            input.customCaretColor = true;
             return input;
         }
 
@@ -287,8 +281,8 @@ namespace NewAgeQoL
             go.transform.SetParent(host, false);
             go.GetComponent<Image>().color = new Color(0.2f, 0.45f, 0.15f, 1f);
             var le = go.GetComponent<LayoutElement>();
-            le.preferredWidth = width; le.minWidth = width; le.preferredHeight = 30f;
-            var t = Label(go.transform, text, 15, FontStyle.Bold, Color.white);
+            le.preferredWidth = width; le.minWidth = width; le.preferredHeight = 32f;
+            var t = Label(go.transform, text, 16, FontStyle.Bold, Color.white);
             Place(t.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             var b = go.GetComponent<Button>();
             b.onClick.AddListener(() => onClick());
