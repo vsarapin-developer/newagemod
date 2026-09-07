@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using Transport.Messages.Common.User;
@@ -88,6 +88,7 @@ namespace NewAgeQoL
             if (dlg == null) throw new Exception("диалог не создан");
             _dlg = dlg;
             dlg.OnDialogDestroy += () => { if (ReferenceEquals(_dlg, dlg)) Forget(); };
+            dlg.CloseButtonClicked += Close;
 
             _caption = Field<Text>(dlg, "Caption");
             _grid = Field<UserRowWidgetManager>(dlg, "WidgetManager");
@@ -105,38 +106,22 @@ namespace NewAgeQoL
             _wrapper = new ListWrapper<UserRowInfoMessage>(new List<UserRowInfoMessage>());
             _grid.DataProvider = _wrapper;
 
-            Transform barHost = dlg.transform;
-            RectTransform slot = null;
-            if (button != null)
-            {
-                slot = button.transform as RectTransform;
-                barHost = button.transform.parent;
-                button.gameObject.SetActive(false);
-            }
-
+            if (button != null) button.gameObject.SetActive(false);
+            var srt = scroller as RectTransform;
+            if (srt == null) throw new Exception("в диалоге нет области списка");
+            const float barH = 36f;
+            const float gap = 6f;
             var barGo = new GameObject("QoLOnlineBar", typeof(RectTransform), typeof(HorizontalLayoutGroup));
-            barGo.transform.SetParent(barHost, false);
+            barGo.transform.SetParent(srt.parent, false);
             var brt = (RectTransform)barGo.transform;
-            if (slot != null)
-            {
-                brt.anchorMin = slot.anchorMin; brt.anchorMax = slot.anchorMax; brt.pivot = slot.pivot;
-                brt.anchoredPosition = slot.anchoredPosition;
-                brt.sizeDelta = new Vector2(Mathf.Max(slot.sizeDelta.x, 420f), Mathf.Max(slot.sizeDelta.y, 36f));
-                var sle = slot.GetComponent<LayoutElement>();
-                if (sle != null)
-                {
-                    var ble = barGo.AddComponent<LayoutElement>();
-                    ble.preferredHeight = Mathf.Max(sle.preferredHeight, 36f);
-                    ble.minHeight = ble.preferredHeight;
-                    ble.flexibleWidth = 1f;
-                }
-                brt.SetSiblingIndex(slot.GetSiblingIndex());
-            }
-            else
-            {
-                brt.anchorMin = new Vector2(0f, 0f); brt.anchorMax = new Vector2(1f, 0f); brt.pivot = new Vector2(0.5f, 0f);
-                brt.offsetMin = new Vector2(16f, 12f); brt.offsetMax = new Vector2(-16f, 48f);
-            }
+            brt.anchorMin = new Vector2(srt.anchorMin.x, srt.anchorMin.y);
+            brt.anchorMax = new Vector2(srt.anchorMax.x, srt.anchorMin.y);
+            brt.pivot = new Vector2(0.5f, 0f);
+            brt.offsetMin = new Vector2(srt.offsetMin.x, srt.offsetMin.y);
+            brt.offsetMax = new Vector2(srt.offsetMax.x, srt.offsetMin.y + barH);
+            srt.offsetMin = new Vector2(srt.offsetMin.x, srt.offsetMin.y + barH + gap);
+            brt.SetSiblingIndex(srt.GetSiblingIndex() + 1);
+            Dump(dlg.transform);
             var hlg = barGo.GetComponent<HorizontalLayoutGroup>();
             hlg.spacing = 8f;
             hlg.childAlignment = TextAnchor.MiddleCenter;
@@ -186,7 +171,6 @@ namespace NewAgeQoL
             if (_status != null) _status.text = OnlineList.Status;
             if (_refresh != null) _refresh.interactable = !busy;
             if (_loading != null) _loading.SetActive(busy && nothing);
-            if (_scroller != null) _scroller.SetActive(!nothing);
             if (_empty != null)
             {
                 _empty.gameObject.SetActive(nothing && !busy);
@@ -226,6 +210,28 @@ namespace NewAgeQoL
             RightsNames[rights] = found;
             Plugin.Trace("[онлайн] значок прав «" + rights + "» → " + (found ?? "нет"));
             return found;
+        }
+
+        private static bool _dumped;
+
+        private static void Dump(Transform root)
+        {
+            if (_dumped || root == null) return;
+            _dumped = true;
+            try
+            {
+                var sb = new System.Text.StringBuilder("[онлайн] диалог:");
+                foreach (var t in root.GetComponentsInChildren<Transform>(true))
+                {
+                    var rt = t as RectTransform;
+                    int depth = 0;
+                    for (var x = t; x != null && x != root; x = x.parent) depth++;
+                    sb.Append('\n').Append(new string(' ', depth * 2)).Append(t.name).Append(t.gameObject.activeSelf ? "" : " (выкл)");
+                    if (rt != null) sb.Append(" a=").Append(rt.anchorMin).Append(rt.anchorMax).Append(" o=").Append(rt.offsetMin).Append(rt.offsetMax);
+                }
+                Plugin.Trace(sb.ToString());
+            }
+            catch { }
         }
 
         private static string Norm(string s) => (s ?? "").Trim().ToLowerInvariant().Replace('ё', 'е');
