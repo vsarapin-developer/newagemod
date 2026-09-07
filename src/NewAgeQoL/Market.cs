@@ -437,7 +437,7 @@ namespace NewAgeQoL
             var t = dp.Text;
             t.supportRichText = true;
             t.horizontalOverflow = HorizontalWrapMode.Overflow;
-            t.text = ResourceStrings.FloatToString(price.Value) + " <size=" + Mathf.Max(10, t.fontSize - 4) + ">(" + per + "/шт)</size>";
+            t.text = ResourceStrings.FloatToString(price.Value) + " <size=" + Mathf.Max(10, t.fontSize - 4) + ">(за 1: " + per + ")</size>";
         }
     }
 
