@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using Transport.Messages.Common.User;
@@ -39,7 +39,12 @@ namespace NewAgeQoL
 
         internal static void Tick()
         {
-            try { Listen(); }
+            try
+            {
+                Listen();
+                if (MarketAirCenterPatch.Pending && Time.unscaledTime - MarketAirCenterPatch.PendingAt > 1f)
+                    MarketAirCenterPatch.Pending = false;
+            }
             catch (Exception e) { Plugin.Log?.LogError("[рынок] " + e.Message); }
         }
 
@@ -292,8 +297,26 @@ namespace NewAgeQoL
 
         private static void Air(string text)
         {
-            try { AirMessageScript.ShowInformationNotification(text); }
+            try
+            {
+                var existing = UnityEngine.Object.FindObjectOfType<AirMessageScript>();
+                MarketAirCenterPatch.Pending = existing == null;
+                MarketAirCenterPatch.PendingAt = Time.unscaledTime;
+                AirMessageScript.ShowInformationNotification(text);
+                if (existing != null) Center(existing);
+            }
             catch (Exception e) { Plugin.Trace("[рынок] сообщение: " + e.Message); }
+        }
+
+        internal static void Center(AirMessageScript air)
+        {
+            if (air == null) return;
+            var rt = air.transform as RectTransform;
+            if (rt == null) return;
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = Vector2.zero;
         }
 
         private static void DropOffer(int offerId)
@@ -363,6 +386,20 @@ namespace NewAgeQoL
     public static class MarketRemoveDialogPatch
     {
         private static void Postfix(ThingHintDialog __instance) => Market.SetupRemove(__instance);
+    }
+
+    [HarmonyPatch(typeof(AirMessageScript), "Start")]
+    public static class MarketAirCenterPatch
+    {
+        internal static bool Pending;
+        internal static float PendingAt;
+
+        private static void Postfix(AirMessageScript __instance)
+        {
+            if (!Pending) return;
+            Pending = false;
+            Market.Center(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(NetworkConnection), "SendRequest", new[] { typeof(BaseRequest) })]
