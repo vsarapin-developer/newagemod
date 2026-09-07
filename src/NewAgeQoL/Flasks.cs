@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using BepInEx.Configuration;
@@ -181,6 +181,14 @@ namespace NewAgeQoL
                     if (Consumable(s.SubType) && s.Qty > 0 && seen.Add(s.ThingId))
                         list.Add(s.ThingId);
             return list;
+        }
+
+        internal static bool Scanning => _scanBusy;
+
+        internal static int SubTypeOf(int thingId)
+        {
+            lock (Scanned) foreach (var s in Scanned) if (s.ThingId == thingId) return s.SubType;
+            return 0;
         }
 
         internal static int QtyOf(int thingId)

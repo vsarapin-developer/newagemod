@@ -10,9 +10,11 @@ namespace NewAgeQoL
     {
         private const float PanelW = 580f;
         private const float PanelH = 640f;
-        private const float Cell = 104f;
+        private const float Cell = 168f;
         private const float Icon = 64f;
-        private const int Columns = 4;
+        private const float Caption = 52f;
+        private const int Columns = 3;
+        private const int CombatUsed = 54;
 
         private static Canvas _canvas;
         private static Transform _grid;
@@ -66,10 +68,18 @@ namespace NewAgeQoL
             if (Time.unscaledTime < _refreshAt) return;
             _refreshAt = Time.unscaledTime + 0.3f;
 
+            if (Flasks.Scanning) return;
             var things = Filtered();
-            if (things.Count != _shown.Count) { Rebuild(); return; }
+            if (!Same(things, _shown)) { Rebuild(); return; }
             foreach (var pair in _cells)
                 if (pair.Value != null) pair.Value.sprite = Flasks.IconFor(pair.Key);
+        }
+
+        private static bool Same(List<int> a, List<int> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++) if (a[i] != b[i]) return false;
+            return true;
         }
 
         private static List<int> Filtered()
@@ -77,9 +87,13 @@ namespace NewAgeQoL
             var list = new List<int>();
             foreach (int tid in Flasks.ConsumableThings())
             {
-                if (_keyword.Length == 0) { list.Add(tid); continue; }
+                if (Flasks.SubTypeOf(tid) == CombatUsed) continue;
                 string name = Flasks.DisplayName(tid);
-                if (name != null && name.ToLowerInvariant().Contains(_keyword)) list.Add(tid);
+                if (name == null) continue;
+                string low = name.ToLowerInvariant();
+                if (low.Contains("боев")) continue;
+                if (_keyword.Length > 0 && !low.Contains(_keyword)) continue;
+                list.Add(tid);
             }
             list.Sort();
             return list;
@@ -147,7 +161,7 @@ namespace NewAgeQoL
             cont.anchorMin = new Vector2(0f, 1f); cont.anchorMax = new Vector2(1f, 1f); cont.pivot = new Vector2(0.5f, 1f);
             cont.offsetMin = new Vector2(0f, 0f); cont.offsetMax = new Vector2(0f, 0f);
             var glg = contentGo.GetComponent<GridLayoutGroup>();
-            glg.cellSize = new Vector2(Cell, Cell + 26f);
+            glg.cellSize = new Vector2(Cell, Icon + Caption + 12f);
             glg.spacing = new Vector2(8f, 8f);
             glg.padding = new RectOffset(6, 6, 6, 6);
             glg.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
@@ -196,12 +210,16 @@ namespace NewAgeQoL
 
                 string name = Flasks.DisplayName(thingId) ?? ("id " + thingId);
                 int qty = Flasks.QtyOf(thingId);
-                var cap = Line(cellGo.transform, name + (qty > 0 ? "  x" + qty : ""), 12, FontStyle.Normal, new Color32(240, 232, 210, 255));
+                var cap = Line(cellGo.transform, name + (qty > 0 ? "  x" + qty : ""), 13, FontStyle.Normal, new Color32(240, 232, 210, 255));
                 cap.alignment = TextAnchor.UpperCenter;
                 cap.horizontalOverflow = HorizontalWrapMode.Wrap;
-                cap.verticalOverflow = VerticalWrapMode.Truncate;
+                cap.verticalOverflow = VerticalWrapMode.Overflow;
+                cap.resizeTextForBestFit = true;
+                cap.resizeTextMinSize = 9;
+                cap.resizeTextMaxSize = 13;
                 var csz = cap.gameObject.GetComponent<LayoutElement>() ?? cap.gameObject.AddComponent<LayoutElement>();
-                csz.minHeight = 30f; csz.preferredHeight = 30f;
+                csz.minHeight = Caption; csz.preferredHeight = Caption;
+                Plugin.Trace("[банки] выбор: " + thingId + " «" + name + "» подтип " + Flasks.SubTypeOf(thingId));
 
                 _cells.Add(new KeyValuePair<int, Image>(thingId, iconImg));
             }

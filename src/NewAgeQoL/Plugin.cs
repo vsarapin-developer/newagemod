@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace NewAgeQoL
 {
-    [BepInPlugin(Guid, "New Age QoL", "1.4.2")]
+    [BepInPlugin(Guid, "New Age QoL", "1.4.3")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
