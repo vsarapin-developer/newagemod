@@ -9,7 +9,7 @@ namespace NewAgeQoL
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "newage.qol";
-        public const string Version = "1.7.9";
+        public const string Version = "1.8.0";
 
         internal static ManualLogSource Log;
         internal static Plugin Instance;
@@ -51,11 +51,21 @@ namespace NewAgeQoL
         internal static ConfigEntry<int> CfgCounterId;
         internal static ConfigEntry<bool> CfgVerbose;
         internal static ConfigEntry<bool> CfgMarketMultiLot;
+        internal static ConfigEntry<string> CfgManikin;
+        internal static ConfigEntry<string> CfgStorageCache;
+        internal static ConfigEntry<bool> CfgManikinOn;
+        internal static ConfigEntry<string> CfgManikinTaken;
+        internal static ConfigEntry<bool> CfgSpectate;
+        internal static ConfigEntry<bool> CfgSkillList;
+        internal static ConfigEntry<float> CfgCamZoom;
+        internal static ConfigEntry<bool> CfgCamStart;
         internal static ConfigEntry<bool> CfgOnlineButton;
         internal static ConfigEntry<string> CfgOnlineLogin;
         internal static ConfigEntry<string> CfgOnlinePassword;
         internal static ConfigEntry<string> CfgOnlineVersion;
         internal static ConfigEntry<string> CfgOnlineClanCache;
+        internal static ConfigEntry<string> CfgOnlineClanNames;
+        internal static ConfigEntry<bool> CfgOnlineByClan;
         internal static ConfigEntry<int> CfgLastCharacter;
         internal static ConfigEntry<string> CfgOnlineWindow;
         internal static ConfigEntry<string> CfgOnlineHotkey;
@@ -67,6 +77,7 @@ namespace NewAgeQoL
         internal static ConfigEntry<bool> CfgSoundPm;
         internal static ConfigEntry<bool> CfgSoundFight;
         internal static ConfigEntry<bool> CfgSoundRound;
+        internal static ConfigEntry<float> CfgSoundVolume;
         internal static ConfigEntry<int> CfgPmToastSeconds;
         internal static ConfigEntry<int> CfgPmToastMax;
         internal static ConfigEntry<bool> CfgPmToastLeft;
@@ -96,7 +107,7 @@ namespace NewAgeQoL
                 "Показывать кнопку возврата в Иллениум слева внизу, над кнопкой сумки. В бою кнопка скрыта.");
 
             CfgTownTournament = Config.Bind("Town", "ButtonGoesToTournament", false,
-                "Кнопка возврата ведёт дальше города: сама зайдёт на арену и оттуда к турнирам. Это поведение ТОЛЬКО у кнопки: артефакты и поход, когда им нужен город, возвращаются просто в город.");
+                "Кнопка возврата ведёт дальше города: сама зайдёт на арену и оттуда к турнирам. Это поведение ТОЛЬКО у кнопки: сдача вещей и поход, когда им нужен город, возвращаются просто в город.");
             CfgTownArenaId = Config.Bind("Town", "ArenaDoorId", 0,
                 "id двери арены в городе. 0 — искать дверь по слову из ArenaDoorWords.");
             CfgTownTournamentId = Config.Bind("Town", "TournamentDoorId", 0,
@@ -107,7 +118,7 @@ namespace NewAgeQoL
                 "Слова, по которым мод узнаёт дверь турниров на арене. Если не нашлась, список дверей с их id пишется в лог.");
 
             CfgArtifactButtons = Config.Bind("Town", "ArtifactButtons", true,
-                "Показывать над кнопкой города кнопку артефактов. Пока вещи на руках, она сдаёт их в хранилище, после этого меняет картинку и забирает обратно. Мод сам доходит до банка и хранилища, пропуская пройденные шаги.");
+                "Показывать над кнопкой города кнопку хранилища. Пока вещи на руках, она сдаёт их в хранилище и переодевает в запасной набор, после этого меняет картинку и возвращает всё обратно. Мод сам доходит до банка и хранилища, пропуская пройденные шаги.");
 
             CfgContractsTab = Config.Bind("Inventory", "ContractsTab", true,
                 "Отдельная вкладка «Контракты» в сумке. Из остальных вкладок контракты убираются, кроме вкладки «Все». Выключение возвращает сумку к обычному виду.");
@@ -124,7 +135,7 @@ namespace NewAgeQoL
                 "Узнанные номера контрактов в виде «id:номер» через запятую. Заполняется сама и нужна, чтобы вкладка «Контракты» сразу открывалась по порядку, не дожидаясь названий с сервера.");
 
             CfgFlaskButtons = Config.Bind("Flasks", "ShowButtons", true,
-                "Показывать справа от кнопок города и артефактов столбик банок: жизнь, мана, энергия, грибы. Кнопка появляется только у той банки, которой задан предмет — id или название. В бою столбик скрыт: это ВНЕбоевые банки.");
+                "Показывать справа от кнопок города и хранилища столбик банок: жизнь, мана, энергия, грибы. Кнопка появляется только у той банки, которой задан предмет — id или название. В бою столбик скрыт: это ВНЕбоевые банки.");
             CfgFlaskFillToMax = Config.Bind("Flasks", "FillToMax", true,
                 "ВКЛ: жизнь/мана/энергия — пить до ПОЛНОГО (после каждого глотка мод ждёт обновления полосы и останавливается, как только она заполнилась); грибы — пока сервер даёт, но не больше 20 штук за нажатие. ВЫКЛ: любая кнопка использует ровно ОДНУ штуку за нажатие.");
             CfgFlaskHpId = Config.Bind("Flasks", "HpThingId", 0,
@@ -147,11 +158,11 @@ namespace NewAgeQoL
             CfgInstantRestore = Config.Bind("Combat", "InstantRestore", true,
                 "В бою засчитывать пополнение ОТ РАСХОДНИКОВ (жизнь, мана, энергия, заряды) сразу, как пришёл ответ сервера, не дожидаясь анимации: выпил банку — можно тут же жать умение, приём или каст. Игра держит прибавку внутри очереди анимаций, и до её конца её же проверки считают, что ресурса ещё нет. Прибавки другого происхождения — вампиризм, исцеление, регенерация — идут своим чередом, по анимации, как в обычной игре. Урон и любые списания не трогаются вовсе.");
 
-            CfgCounterAuto = Config.Bind("Combat", "CounterOnPlayers", false,
+            CfgCounterAuto = Config.Bind("Combat", "CounterOnPlayers", true,
                 "Ставить контрприём на себя, когда среди врагов есть живой ИГРОК (хаотические бои, арена, нападение в мире): мобов это не касается, приёмами бьют только игроки. Заряды проверяются ОДИН раз, в начале боя: не хватало их на старте — в этом бою мод больше не лезет, даже если заряды потом пополнить. Тогда первый контрприём за тобой, руками.");
             CfgCounterRefresh = Config.Bind("Combat", "CounterRefresh", false,
                 "Обновлять контрприём на себе в начале раунда. Счёт идёт не «каждый N-й раунд боя», а от ПОСЛЕДНЕГО применения приёма НА СЕБЯ — своего или сделанного модом: применился в 4-м раунде при интервале 2 — следующий в 6-м, нажал сам в 7-м — следующий в 9-м. Контрприёмы, поставленные на союзника, и чужие контрприёмы в счёт не идут: мод следит только за своим персонажем. Первого контрприёма обновление не делает никогда: пока приёма не было, обновлять нечего.");
-            CfgCounterRefreshRounds = Config.Bind("Combat", "CounterRefreshRounds", 3,
+            CfgCounterRefreshRounds = Config.Bind("Combat", "CounterRefreshRounds", 2,
                 "Через сколько раундов после последнего контрприёма ставить следующий. Меньше 1 считается за 1.");
             CfgCounterId = Config.Bind("Combat", "CounterDodgeId", 4,
                 "id приёма «Контрприем» среди приёмов. Менять не нужно: 4 — его номер в игре. Если приёма с этим номером в бою нет, мод ищет его по названию.");
@@ -205,7 +216,7 @@ namespace NewAgeQoL
                 "Не показывать всплывающее окно «Системное сообщение» — объявления администрации и разведки посреди экрана. Сам текст никуда не девается: он приходит в чат, вкладка «Общий». Письма, которые ждут при входе в игру, окном показываются по-прежнему.");
 
             CfgStash = Config.Bind("Town", "StashedArtifacts", "",
-                "Что лежит в хранилище после сдачи, в виде «вещь;слот» через запятую. Слот 0 значит, что вещь была в сумке. Заполняется и очищается кнопкой артефактов.");
+                "Что нужно вернуть после сдачи, в виде «вещь;слот» через запятую. Слот 0 значит, что вещь была в сумке. Заполняется и очищается кнопкой хранилища.");
 
             CfgSearch = Config.Bind("Inventory", "TabSearch", true,
                 "Строка поиска под сеткой предметов. Фильтрует текущую вкладку сумки по названию, при переключении вкладки очищается.");
@@ -220,6 +231,16 @@ namespace NewAgeQoL
 
             CfgMarketMultiLot = Config.Bind("Market", "MultiLot", true,
                 "В штатном окне выставления вещи на рынок добавляет поле «Лотов»: сколько одинаковых лотов выставить подряд по заданной цене. 1 — как обычно.");
+            CfgManikin = Config.Bind("Artifacts", "Manikin", "",
+                "Запасной набор: во что переодеться, когда вещи сданы в хранилище. Пары «слот:номер вещи» через запятую, заполняется сам из окна набора в настройках мода.");
+            CfgManikinOn = Config.Bind("Artifacts", "ManikinWorn", false,
+                "Сейчас надет запасной набор, а прежние вещи ждут возврата. Ставится и снимается сам кнопками сдачи и возврата.");
+            CfgManikinTaken = Config.Bind("Artifacts", "SpareSetTaken", "",
+                "Что запасной набор взял из хранилища, пары «номер вещи:количество». При возврате эти вещи уезжают обратно в хранилище, остальные остаются в сумке. Заполняется само.");
+            CfgStorageCache = Config.Bind("Artifacts", "StorageCache", "",
+                "Что мод в последний раз видел в хранилище, пары «номер вещи:количество». Нужно, чтобы окно запасного набора показывало вещи из хранилища, когда ты не в нём. Заполняется само.");
+            CfgSpectate = Config.Bind("Combat", "WatchFights", true,
+                "В окне заявок на хаотические бои показывать и те бои, которые уже начались: карточка выглядит как обычная заявка, но перечёркнута крестом, а нажатие уводит смотреть бой, как это делает старый 2D-клиент. Неначатые заявки всегда идут первыми.");
             CfgOnlineButton = Config.Bind("Online", "Button", true,
                 "Кнопка «Кто в игре» в боковой панели: полный список игроков онлайн, как в старом 2D-клиенте. Список сервер отдаёт только старому протоколу, а вход по нему выбивает свою же сессию, поэтому мод заходит ЗАПАСНЫМ аккаунтом: подключается им, забирает список, отключается. Запасной персонаж на пару секунд появляется в мире.");
             CfgOnlineLogin = Config.Bind("Online", "Login", "",
@@ -230,6 +251,16 @@ namespace NewAgeQoL
                 "Номер версии старого 2D-клиента, который мод называет серверу при входе запасным аккаунтом. Менять только если сервер отвечает «Обновите версию игры».");
             CfgOnlineClanCache = Config.Bind("Online", "ClanIconCache", "",
                 "Узнанные коды значков кланов для окна «Кто в игре» в виде «значок:код» через запятую. Заполняется само, чтобы значки появлялись сразу.");
+            CfgOnlineClanNames = Config.Bind("Online", "ClanNameCache", "",
+                "Узнанные названия кланов в виде «значок=название» через запятую. Заполняется само, чтобы в режиме «по кланам» заголовки групп были с названиями, а не с именами значков.");
+            CfgOnlineByClan = Config.Bind("Online", "GroupByClan", false,
+                "В окне «Кто в игре» группировать игроков по кланам: сначала заголовок клана, под ним его игроки. ВЫКЛ — общим списком по уровню. Переключается кнопкой в самом окне.");
+            CfgSkillList = Config.Bind("Combat", "SkillList", false,
+                "Умения списком справа вверху, как в старом 2D-клиенте: мастерства, заклинания и уклонения одним списком, доступные в текущей фазе. Кнопки этих трёх меню в нижней панели при этом скрываются. Наведение показывает обычную подсказку игры с фазой, стоимостью и описанием, нажатие включает умение так же, как выбор из круглого меню. ВЫКЛ — всё как в игре, нижней панелью.");
+            CfgCamZoom = Config.Bind("Combat", "CameraRange", 1f,
+                "Насколько дальше игрового можно ОТДАЛИТЬ камеру в бою: 1 — как в игре, 2 — вдвое дальше и выше, до 4. Приближение остаётся игровым, ближе игрового предела камера не подойдёт. Мод только раздвигает дальний предел, управление игровое: колесо мыши и перетаскивание.");
+            CfgCamStart = Config.Bind("Combat", "CameraStartFar", false,
+                "Начинать бой с отведённой камерой: мод сразу откатывает её до дальнего предела, как если бы ты сам крутил колесо от себя. Дальний предел задаётся ползунком отдаления.");
             CfgFighterHint = Config.Bind("Combat", "FighterHint", true,
                 "В бою при наведении мыши на бойца показывать подсказку, как в старом 2D-клиенте: имя, уровень, рейтинг, жизнь/мана/энергия и таблица эффектов с источником, силой и длительностью. Данные те же, что игра показывает сама (индикаторы и список состояний бойца).");
             CfgEffectsButton = Config.Bind("Combat", "EffectsButton", true,
@@ -243,6 +274,8 @@ namespace NewAgeQoL
             CfgSoundPm = Config.Bind("Sounds", "PrivateMessage", true, "Звук личного сообщения: и когда пишут тебе, и когда пишешь ты.");
             CfgSoundFight = Config.Bind("Sounds", "FightStart", true, "Звук при входе в бой.");
             CfgSoundRound = Config.Bind("Sounds", "RoundStart", true, "Звук по окончании боевой фазы раунда.");
+            CfgSoundVolume = Config.Bind("Sounds", "FlashVolume", 1f,
+                "Громкость звуков из старого клиента, от 0 (тишина) до 1. Не зависит от громкости в настройках игры: та остаётся для звуков самой игры. Заменённые звуки игры молчат в любом случае, пока включён звук мода.");
             CfgPmToasts = Config.Bind("Chat", "PrivateToasts", true,
                 "Личные сообщения всплывают слева снизу, как уведомления на стриме: видно, кто и что написал, не открывая чат. Нажатие на уведомление открывает чат на вкладке «Приватно» с подставленным ником отправителя.");
             CfgPmToastSeconds = Config.Bind("Chat", "PrivateToastSeconds", 8,
@@ -251,6 +284,8 @@ namespace NewAgeQoL
                 "Сколько всплывающих личных сообщений показывать одновременно, друг под другом (1–10). При переполнении самое старое убирается.");
             CfgPmToastMax.Value = UnityEngine.Mathf.Clamp(CfgPmToastMax.Value, 1, 10);
             CfgPmToastSeconds.Value = UnityEngine.Mathf.Clamp(CfgPmToastSeconds.Value, 2, 120);
+            CfgSoundVolume.Value = UnityEngine.Mathf.Clamp01(CfgSoundVolume.Value);
+            CfgCamZoom.Value = UnityEngine.Mathf.Clamp(CfgCamZoom.Value, 1f, 4f);
             CfgTeamToasts = Config.Bind("Chat", "TeamToasts", true,
                 "Сообщения командного чата тоже всплывают карточками (с синей полоской). Нажатие открывает чат на вкладке команды, ник не подставляется.");
             CfgSoundTeam = Config.Bind("Sounds", "TeamMessage", true, "Звук сообщения командного чата, тот же, что у личного: и на чужие сообщения, и на свои.");
@@ -261,7 +296,7 @@ namespace NewAgeQoL
             CfgOnlineHotkey = Config.Bind("Online", "Hotkey", "F9",
                 "Клавиша, открывающая и закрывающая окно «Кто в игре» где угодно, в том числе в бою, где боковой панели с кнопкой нет. Задаётся в настройках мода: нажми на поле справа от строки и нажми нужную клавишу. Клавиши, уже занятые в настройках игры, назначить нельзя. Delete в режиме выбора убирает клавишу, тогда окно открывается только кнопкой.");
             CfgOnlineWindow = Config.Bind("Online", "Window", "",
-                "Положение и высота окна «Кто в игре» в виде «x;y;высота». Заполняется само, когда окно двигаешь или тянешь за нижний край. Пусто — по центру, высота по умолчанию.");
+                "Положение и размер окна «Кто в игре» в виде «x;y;высота;ширина». Заполняется само, когда окно двигаешь или тянешь за нижний или правый край. Пусто — по центру, размер по умолчанию.");
             CfgLastCharacter = Config.Bind("Launch", "LastCharacter", 0,
                 "id персонажа, которым ты в последний раз входил в игру через этот клиент. Заполняется само. На экране выбора персонажа мод сразу показывает его, а не того, кто заходил последним по данным сервера (например, запасного для окна «Кто в игре»). 0 — как в игре.");
             CfgVerbose = Config.Bind("Log", "Verbose", false,
@@ -308,9 +343,15 @@ namespace NewAgeQoL
             Search.Tick();
             Counter.Tick();
             Market.Tick();
+            SkillList.Tick();
+            SkillList.Aim();
+            Notice.Tick();
+            CombatCam.Tick();
             FlaskPicker.Tick();
             OnlineList.Tick();
             OnlineWindow.Tick();
+            Spectate.Tick();
+            Manikin.Tick();
             FighterHint.Tick();
             EffectsWindow.Tick();
             PrivateToasts.Tick();

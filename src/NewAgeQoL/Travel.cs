@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
@@ -225,9 +225,9 @@ namespace NewAgeQoL
             int arrived = ArrivedStamp, refused = RefusedStamp, load = LoadStamp;
             if (!Send(new BeginMoveRequest(vertex))) { _ok = false; yield break; }
 
-            yield return WaitFor(() => ArrivedStamp != arrived || RefusedStamp != refused, 300f,
+            yield return WaitFor(() => ArrivedStamp != arrived || RefusedStamp != refused, 30f,
                                  () => LoadStamp != load);
-            if (!_ok) { Stop("не дошёл"); yield break; }
+            if (!_ok) { Stop("сервер не ответил на ход"); yield break; }
 
             if (RefusedStamp != refused)
             {
@@ -236,7 +236,7 @@ namespace NewAgeQoL
                     _ok = false;
                     Plugin.Trace("[travel] сервер не ведёт к v" + vertex + ", стою на v" + RefusedAt);
                     if (Locked(vertex)) Say("«" + spot.Name + "»: точка ещё не открыта.");
-                    else Stop("сервер не пускает дальше");
+                    else Stop(Blocked());
                     yield break;
                 }
                 if (enter && !Send(new GlobalMapActionRequest())) { _ok = false; yield break; }
@@ -340,6 +340,36 @@ namespace NewAgeQoL
             foreach (var vertex in all)
                 if (vertex != null && vertex.Id == id) return vertex;
             return null;
+        }
+
+        private static string Blocked()
+        {
+            var shut = Shut();
+            if (shut.Count == 0) return "сервер не пускает дальше";
+            var list = new System.Text.StringBuilder();
+            for (int i = 0; i < shut.Count && i < 5; i++)
+            {
+                if (list.Length > 0) list.Append(", ");
+                list.Append(shut[i]);
+            }
+            if (shut.Count > 5) list.Append(" и ещё ").Append(shut.Count - 5);
+            return "дорога закрыта: по пути не открыты точки " + list;
+        }
+
+        private static List<int> Shut()
+        {
+            var list = new List<int>();
+            try
+            {
+                var map = Gmc;
+                var all = map != null ? map.Vertices : null;
+                if (all == null) return list;
+                foreach (var vertex in all)
+                    if (vertex != null && vertex.State == EGlobalMapVertexState.Closed) list.Add(vertex.Id);
+                list.Sort();
+            }
+            catch { }
+            return list;
         }
 
         private static bool Locked(int id)

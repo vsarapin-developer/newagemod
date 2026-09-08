@@ -38,6 +38,7 @@ namespace NewAgeQoL
 
         private static readonly Dictionary<string, int> ClanCodes = new Dictionary<string, int>();
         private static readonly HashSet<string> ClanNoCode = new HashSet<string>();
+        private static readonly Dictionary<string, string> ClanNames = new Dictionary<string, string>();
         private static readonly Queue<OnlinePlayer> AskQueue = new Queue<OnlinePlayer>();
         private static readonly HashSet<int> Asked = new HashSet<int>();
         private static float _askAt;
@@ -90,6 +91,12 @@ namespace NewAgeQoL
                 int code;
                 if (int.TryParse(part.Substring(i + 1), out code)) ClanCodes[part.Substring(0, i)] = code;
             }
+            foreach (var part in (Plugin.CfgOnlineClanNames?.Value ?? "").Split(','))
+            {
+                int i = part.IndexOf('=');
+                if (i <= 0 || i + 1 >= part.Length) continue;
+                ClanNames[part.Substring(0, i)] = part.Substring(i + 1);
+            }
         }
 
         private static void SaveCache()
@@ -104,6 +111,24 @@ namespace NewAgeQoL
             Plugin.CfgOnlineClanCache.Value = sb.ToString();
         }
 
+        private static void SaveNames()
+        {
+            if (Plugin.CfgOnlineClanNames == null) return;
+            var sb = new StringBuilder();
+            foreach (var kv in ClanNames)
+            {
+                if (sb.Length > 0) sb.Append(',');
+                sb.Append(kv.Key.Replace(',', '_').Replace('=', '_')).Append('=').Append(kv.Value.Replace(',', ' '));
+            }
+            Plugin.CfgOnlineClanNames.Value = sb.ToString();
+        }
+
+        internal static string ClanName(string icon)
+        {
+            string name;
+            return !string.IsNullOrEmpty(icon) && ClanNames.TryGetValue(icon, out name) ? name : "";
+        }
+
         internal static bool ClanCode(string icon, out int code)
         {
             code = 0;
@@ -115,7 +140,8 @@ namespace NewAgeQoL
             var wanted = new HashSet<string>();
             foreach (var p in players)
             {
-                if (string.IsNullOrEmpty(p.Clan) || ClanCodes.ContainsKey(p.Clan) || ClanNoCode.Contains(p.Clan)) continue;
+                if (string.IsNullOrEmpty(p.Clan)) continue;
+                if ((ClanCodes.ContainsKey(p.Clan) || ClanNoCode.Contains(p.Clan)) && ClanNames.ContainsKey(p.Clan)) continue;
                 if (!wanted.Add(p.Clan)) continue;
                 if (Asked.Contains(p.Id)) continue;
                 Asked.Add(p.Id);
@@ -136,6 +162,11 @@ namespace NewAgeQoL
                 SaveCache();
             }
             else ClanNoCode.Add(p.Clan);
+            if (!string.IsNullOrEmpty(info.ClanName) && (!ClanNames.ContainsKey(p.Clan) || ClanNames[p.Clan] != info.ClanName))
+            {
+                ClanNames[p.Clan] = info.ClanName;
+                SaveNames();
+            }
             lock (Gate) _version++;
         }
 
@@ -150,6 +181,12 @@ namespace NewAgeQoL
                 Set("Укажи логин и пароль запасного аккаунта в настройках мода");
                 return;
             }
+            string me = Mine();
+            if (me.Length > 0 && string.Equals(me, login, StringComparison.OrdinalIgnoreCase))
+            {
+                Set("В настройках указан тот же персонаж, которым ты играешь — нужен запасной");
+                return;
+            }
             lock (Gate)
             {
                 if (_busy) return;
@@ -159,6 +196,26 @@ namespace NewAgeQoL
             }
             var t = new Thread(() => Work(login, pass, ver)) { IsBackground = true, Name = "QoLOnlineList" };
             t.Start();
+        }
+
+        internal static string SameOne()
+        {
+            string login = (Plugin.CfgOnlineLogin?.Value ?? "").Trim();
+            if (login.Length == 0) return null;
+            string me = Mine();
+            if (me.Length == 0 || !string.Equals(me, login, StringComparison.OrdinalIgnoreCase)) return null;
+            return "В настройках указан тот же персонаж, которым ты играешь — для списка нужен запасной аккаунт";
+        }
+
+        private static string Mine()
+        {
+            try
+            {
+                var ud = DependencyContainer.GetContainer()?.Resolve<IUserData>();
+                var info = ud != null ? ud.UserInfo : null;
+                return info != null && !string.IsNullOrEmpty(info.Login) ? info.Login.Trim() : "";
+            }
+            catch { return ""; }
         }
 
         private static void Set(string status)

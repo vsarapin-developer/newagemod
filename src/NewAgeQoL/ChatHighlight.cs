@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.RegularExpressions;
 using HarmonyLib;
 using Transport.Messages.Responses.Chat;
@@ -29,7 +29,7 @@ namespace NewAgeQoL
             message.Text = Open + Colors.Replace(message.Text, "") + Close;
         }
 
-        private static string Login()
+        internal static string Login()
         {
             try
             {

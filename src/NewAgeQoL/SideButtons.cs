@@ -44,14 +44,14 @@ namespace NewAgeQoL
                 Name = "QoLArtifactButton",
                 Col = 0,
                 Hint = () => Artifacts.HasStash
-                    ? "Забрать артефакты и надеть"
-                    : "Сдать артефакты в хранилище",
+                    ? "Забрать вещи из хранилища и надеть"
+                    : "Сдать вещи в хранилище",
                 Enabled = () => Plugin.CfgArtifactButtons == null || Plugin.CfgArtifactButtons.Value,
                 Sprite = () => Artifacts.HasStash ? Pick("storage_get", 13) : Pick("storage_put", 14),
                 Click = () =>
                 {
                     if (Artifacts.Busy) return;
-                    Travel.Cancel("занялся артефактами");
+                    Travel.Cancel("занялся вещами");
                     if (Artifacts.HasStash) Artifacts.Restore();
                     else Artifacts.Stash();
                 },
@@ -403,7 +403,7 @@ namespace NewAgeQoL
                 }
                 else if (!string.IsNullOrEmpty(Artifacts.Status))
                 {
-                    line = "Артефакты: " + Artifacts.Status;
+                    line = "Вещи: " + Artifacts.Status;
                     owner = Named("QoLArtifactButton");
                 }
                 else if (!string.IsNullOrEmpty(Flasks.Status))

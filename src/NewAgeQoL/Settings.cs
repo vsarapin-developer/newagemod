@@ -21,7 +21,7 @@ namespace NewAgeQoL
 
         private sealed class BoolRow : RowDef { internal ConfigEntry<bool> Cfg; }
 
-        private sealed class SliderRow : RowDef { internal ConfigEntry<float> Cfg; internal float Min; internal float Max; internal bool Preview; }
+        private sealed class SliderRow : RowDef { internal ConfigEntry<float> Cfg; internal float Min; internal float Max; internal bool Preview; internal Action<float> OnChange; }
 
         private sealed class KeyRow : RowDef { internal ConfigEntry<string> Cfg; }
 
@@ -49,7 +49,13 @@ namespace NewAgeQoL
                 new Header { Title = "Кнопки" },
                 B("Кнопка возврата в Иллениум", Plugin.CfgTownButton),
                 B("Возврат в Иллениум ведёт на арену, к турнирам", Plugin.CfgTownTournament),
-                B("Кнопка артефактов", Plugin.CfgArtifactButtons),
+                B("Кнопка сдачи вещей в хранилище", Plugin.CfgArtifactButtons),
+
+                new Header { Title = "Переодевание" },
+                A("Запасной набор", "Открыть", Manikin.Toggle),
+                Artifacts.Pending > 0
+                    ? A("Ждут возврата: " + Artifacts.Pending, "Забыть", Artifacts.ForgetStash)
+                    : null,
 
                 new Header { Title = "Банки" },
                 B("Кнопки банок", Plugin.CfgFlaskButtons),
@@ -66,6 +72,10 @@ namespace NewAgeQoL
                 I("Раундов между контрприёмами", Plugin.CfgCounterRefreshRounds),
                 B("Подсказка по бойцу при наведении", Plugin.CfgFighterHint),
                 B("Кнопка «Эффекты» в бою", Plugin.CfgEffectsButton),
+                B("Идущие бои в списке заявок", Plugin.CfgSpectate),
+                B("Умения списком справа вверху", Plugin.CfgSkillList),
+                Sl("Отдаление камеры в бою", Plugin.CfgCamZoom, 1f, 4f),
+                B("Начинать бой отдалённой камерой", Plugin.CfgCamStart),
 
                 new Header { Title = "Карта" },
                 B("Номера точек внешнего мира", Plugin.CfgMapLabels),
@@ -100,10 +110,13 @@ namespace NewAgeQoL
 
                 new Header { Title = "Звуки" },
                 B("Звуки как во Flash", Plugin.CfgSounds),
+                Sl("Громкость звуков мода", Plugin.CfgSoundVolume, 0f, 1f, false, v => Sounds.Sample()),
                 B("Личное сообщение", Plugin.CfgSoundPm),
                 B("Командный чат", Plugin.CfgSoundTeam),
                 B("Начало боя", Plugin.CfgSoundFight),
                 B("Конец боевой фазы", Plugin.CfgSoundRound),
+
+                new Header { Title = "" },
             };
             rows.RemoveAll(r => r == null);
             return rows;
@@ -129,8 +142,8 @@ namespace NewAgeQoL
         private static RowDef B(string title, ConfigEntry<bool> cfg) =>
             cfg == null ? null : new BoolRow { Title = title, Cfg = cfg };
 
-        private static RowDef Sl(string title, ConfigEntry<float> cfg, float min, float max, bool preview = false) =>
-            cfg == null ? null : new SliderRow { Title = title, Cfg = cfg, Min = min, Max = max, Preview = preview };
+        private static RowDef Sl(string title, ConfigEntry<float> cfg, float min, float max, bool preview = false, Action<float> onChange = null) =>
+            cfg == null ? null : new SliderRow { Title = title, Cfg = cfg, Min = min, Max = max, Preview = preview, OnChange = onChange };
 
         private static RowDef S(string title, ConfigEntry<string> cfg, bool secret = false) =>
             cfg == null ? null : new ValueRow
@@ -309,10 +322,38 @@ namespace NewAgeQoL
 
                 Grow(_frame, need, self: true);
                 foreach (RectTransform child in _frame) Grow(child, need, self: false);
+                Center();
                 Plugin.Trace("[settings] ширина окна " + now + " → " + _frame.rect.width
                              + " (хотим " + _wantWidth + ")");
             }
             catch (Exception e) { Plugin.Log?.LogError("[settings] ширина окна: " + e.Message); }
+        }
+
+        private static void Center()
+        {
+            if (_frame == null) return;
+            var canvas = _frame.GetComponentInParent<Canvas>();
+            var area = canvas != null ? canvas.transform as RectTransform : _frame.parent as RectTransform;
+            if (area == null) return;
+            RectTransform box = null;
+            float best = 0f;
+            foreach (RectTransform child in _frame)
+            {
+                if (child == null || !child.gameObject.activeSelf) continue;
+                float area2 = child.rect.width * child.rect.height;
+                if (area2 > best) { best = area2; box = child; }
+            }
+            var target = box ?? _frame;
+            var corners = new Vector3[4];
+            target.GetWorldCorners(corners);
+            var middle = (corners[0] + corners[2]) * 0.5f;
+            var wanted = area.TransformPoint(area.rect.center);
+            var shift = wanted - middle;
+            shift.z = 0f;
+            if (shift.sqrMagnitude < 0.25f) return;
+            _frame.position += shift;
+            Plugin.Trace("[settings] окно подвинуто в центр на " + shift.x.ToString("0") + ";" + shift.y.ToString("0")
+                                + ", холст " + area.name + " " + area.rect.width.ToString("0") + "x" + area.rect.height.ToString("0"));
         }
 
         private static void Grow(RectTransform rt, float extra, bool self)
@@ -434,6 +475,7 @@ namespace NewAgeQoL
                         Plugin.Trace("[settings] " + def.Title + " = " + v.ToString("0.00", ci));
                         if (pbg != null) PrivateToasts.SetOpacity(pbg, psh, v);
                         if (sl.Preview) PrivateToasts.ApplyOpacity(v);
+                        if (sl.OnChange != null) sl.OnChange(v);
                     });
                     _refresh.Add(() => { slider.SetValueWithoutNotify(sl.Cfg.Value); if (pbg != null) PrivateToasts.SetOpacity(pbg, psh, sl.Cfg.Value); });
                 }
@@ -820,6 +862,10 @@ namespace NewAgeQoL
             {
                 if (Input.GetKeyDown(KeyCode.Escape))
                 {
+                    if (FlaskPicker.EscapeClose()) return false;
+                    if (SkillList.EscapeClose()) return false;
+                    if (ManikinPicker.EscapeClose()) return false;
+                    if (Manikin.EscapeClose()) return false;
                     if (Changelog.EscapeClose()) return false;
                     if (ModalDialogList.IsEmpty())
                     {

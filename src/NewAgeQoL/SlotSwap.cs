@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
 using Transport.Messages.Responses.Things.Actions;
@@ -140,10 +140,35 @@ namespace NewAgeQoL
             internal int Kind;
         }
 
+        private sealed class Job
+        {
+            internal string What;
+            internal ESlots.SlotType[] Main;
+            internal ESlots.SlotType[] Spare;
+        }
+
+        private static readonly List<Job> Waiting = new List<Job>();
+
         private static void Swap(string what, ESlots.SlotType[] main, ESlots.SlotType[] spare)
         {
-            if (_busy || Plugin.Instance == null) return;
-            Plugin.Instance.StartCoroutine(Run(what, main, spare));
+            if (Plugin.Instance == null) return;
+            if (!_busy)
+            {
+                Plugin.Instance.StartCoroutine(Run(what, main, spare));
+                return;
+            }
+            foreach (var job in Waiting) if (job.What == what) return;
+            if (Waiting.Count >= 2) return;
+            Waiting.Add(new Job { What = what, Main = main, Spare = spare });
+            Note(what + ": в очереди", 6f);
+        }
+
+        private static void Next()
+        {
+            if (Waiting.Count == 0 || Plugin.Instance == null) return;
+            var job = Waiting[0];
+            Waiting.RemoveAt(0);
+            Plugin.Instance.StartCoroutine(Run(job.What, job.Main, job.Spare));
         }
 
         private static IEnumerator Run(string what, ESlots.SlotType[] main, ESlots.SlotType[] spare)
@@ -172,7 +197,7 @@ namespace NewAgeQoL
                 catch { }
                 Note(what + ": готово", 3f);
             }
-            finally { _busy = false; }
+            finally { _busy = false; Next(); }
         }
 
         private static IEnumerator Strip(Piece piece)
@@ -413,6 +438,7 @@ namespace NewAgeQoL
         private static void Postfix(UserMenuCharacterSlotsPanelContent __instance,
                                     IDictionary<ESlots.SlotType, InventoryWearResponseMessageItem> wearedSlots)
         {
+            if (__instance == null || Manikin.Owns(__instance.transform)) return;
             SlotSwap.Sync(__instance, wearedSlots);
         }
     }

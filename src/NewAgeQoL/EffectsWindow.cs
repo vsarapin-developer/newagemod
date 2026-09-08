@@ -10,10 +10,10 @@ namespace NewAgeQoL
 {
     internal static class EffectsWindow
     {
-        private const float PanelW = 550f;
-        private const float PanelH = 420f;
-        private const float TopH = 48f;
-        private const float RowH = 22f;
+        private const float PanelW = 420f;
+        private const float PanelH = 360f;
+        private const float TopH = 38f;
+        private const float RowH = 17f;
 
         private static GameObject _canvasGo;
         private static GameObject _panelGo;
@@ -45,10 +45,12 @@ namespace NewAgeQoL
                 if (!combat)
                 {
                     _btnGo = null;
+                    Column(false);
                     if (_canvasGo != null) Close();
                     return;
                 }
                 if (Enabled) { EnsureButton(); ButtonState(); }
+                Column(Enabled);
                 if (_canvasGo == null) return;
                 if (_panelGo == null) { Close(); return; }
                 if (Time.unscaledTime < _pollAt) return;
@@ -56,6 +58,29 @@ namespace NewAgeQoL
                 Refresh();
             }
             catch (Exception e) { Plugin.Trace("[эффекты] " + e.Message); }
+        }
+
+        private static GameObject _theirs;
+
+        private static void Column(bool hide)
+        {
+            try
+            {
+                if (_theirs == null)
+                {
+                    if (!hide) return;
+                    var ctrl = DependencyContainer.ResolveController<EnchantmentPanelsController>();
+                    if (ctrl == null) return;
+                    var panel = AccessTools.Property(typeof(EnchantmentPanelsController), "SelectedCharacterPanel")?.GetValue(ctrl) as AbstractCharacterPanel;
+                    if (panel == null) return;
+                    var grid = AccessTools.Field(typeof(AbstractCharacterPanel), "enchantmentsPanel")?.GetValue(panel) as MonoBehaviour;
+                    if (grid == null) return;
+                    _theirs = grid.gameObject;
+                }
+                if (_theirs.activeSelf == !hide) return;
+                _theirs.SetActive(!hide);
+            }
+            catch (Exception e) { Plugin.Trace("[эффекты] колонка состояний: " + e.Message); }
         }
 
         internal static void Toggle()
@@ -130,17 +155,18 @@ namespace NewAgeQoL
             }
 
             bool me = cd.MyCharacter != null && cd.MyCharacter.UserId == ch.UserId;
+            bool friend = me || (cd.MyCharacter != null && ch.Team == cd.MyCharacter.Team);
             _title.text = "Эффекты: " + (ch.Login ?? "?") + (me ? " (ты)" : "") + (ch.Level > 0 ? "   " + ch.Level + " ур." : "");
             var ind = ch.Indicators;
             _bars.text = ind == null ? "" :
-                "<color=#ff6a5a>Жизнь " + ind.CurrentLife + " / " + ind.MaxLife + "</color>     "
-                + "<color=#6db3ff>Мана " + ind.CurrentMana + " / " + ind.MaxMana + "</color>     "
-                + "<color=#ffd257>Энергия " + (me ? ind.CurrentStamina + " / " + ind.MaxStamina : "?") + "</color>";
+                "<color=#ff6a5a>" + ind.CurrentLife + " / " + ind.MaxLife + "</color>   "
+                + "<color=#6db3ff>" + ind.CurrentMana + " / " + ind.MaxMana + "</color>   "
+                + "<color=#ffd257>" + (friend ? ind.CurrentStamina + " / " + ind.MaxStamina : "?") + "</color>";
 
             List<UserEnchantmentsResponseItem> items;
             bool known = FighterHint.States.TryGetValue(ch.UserId, out items);
             var sig = new StringBuilder();
-            sig.Append(ch.UserId).Append('|');
+            sig.Append(ch.UserId).Append('|').Append(FighterHint.NamesVersion).Append('|');
             if (known)
                 foreach (var it in items)
                 {
@@ -202,30 +228,30 @@ namespace NewAgeQoL
             mover.Canvas = canvas;
             mover.OnDone = SavePos;
 
-            _title = Label(_panelGo.transform, "Эффекты", 20, FontStyle.Bold, new Color32(255, 224, 130, 255));
-            Place(_title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -44f), new Vector2(-60f, -6f));
+            _title = Label(_panelGo.transform, "Эффекты", 15, FontStyle.Bold, new Color32(255, 224, 130, 255));
+            Place(_title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(12f, -34f), new Vector2(-52f, -6f));
             _title.alignment = TextAnchor.MiddleLeft;
             _title.raycastTarget = false;
 
             MakeCloseButton();
 
-            _bars = Label(_panelGo.transform, "", 14, FontStyle.Bold, Color.white);
+            _bars = Label(_panelGo.transform, "", 10, FontStyle.Bold, Color.white);
             _bars.supportRichText = true;
-            Place(_bars.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -76f), new Vector2(-16f, -50f));
+            Place(_bars.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(12f, -56f), new Vector2(-12f, -38f));
 
             var headGo = new GameObject("head", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             headGo.transform.SetParent(_panelGo.transform, false);
-            Place((RectTransform)headGo.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -104f), new Vector2(-30f, -80f));
+            Place((RectTransform)headGo.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(12f, -76f), new Vector2(-26f, -58f));
             FillRow(headGo, "Название", "Источник", "Эффект", "Длительность", new Color32(255, 224, 130, 255), FontStyle.Bold);
             var ruleGo = new GameObject("rule", typeof(RectTransform), typeof(Image));
             ruleGo.transform.SetParent(_panelGo.transform, false);
-            Place((RectTransform)ruleGo.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(16f, -106f), new Vector2(-30f, -105f));
+            Place((RectTransform)ruleGo.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(12f, -78f), new Vector2(-26f, -77f));
             ruleGo.GetComponent<Image>().color = new Color(0.55f, 0.42f, 0.22f, 0.7f);
 
             var scrollGo = new GameObject("scroll", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(RectMask2D));
             scrollGo.transform.SetParent(_panelGo.transform, false);
             var srt = (RectTransform)scrollGo.transform;
-            Place(srt, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(12f, 12f), new Vector2(-30f, -110f));
+            Place(srt, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(10f, 10f), new Vector2(-26f, -80f));
             var simg = scrollGo.GetComponent<Image>();
             simg.color = new Color(0f, 0f, 0f, 0.25f);
             simg.sprite = OnlineWindow.Rounded(8);
@@ -257,7 +283,7 @@ namespace NewAgeQoL
 
             var sbGo = new GameObject("scrollbar", typeof(RectTransform), typeof(Image), typeof(Scrollbar));
             sbGo.transform.SetParent(_panelGo.transform, false);
-            Place((RectTransform)sbGo.transform, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0.5f), new Vector2(-26f, 12f), new Vector2(-14f, -110f));
+            Place((RectTransform)sbGo.transform, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0.5f), new Vector2(-22f, 10f), new Vector2(-12f, -80f));
             sbGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.35f);
             var sb = sbGo.GetComponent<Scrollbar>();
             sb.direction = Scrollbar.Direction.BottomToTop;
@@ -290,26 +316,26 @@ namespace NewAgeQoL
         private static void FillRow(GameObject go, string name, string src, string power, string dur, Color32 color, FontStyle style)
         {
             var h = go.GetComponent<HorizontalLayoutGroup>();
-            h.padding = new RectOffset(6, 6, 1, 1);
-            h.spacing = 8f;
+            h.padding = new RectOffset(4, 4, 0, 0);
+            h.spacing = 6f;
             h.childControlWidth = true;
             h.childControlHeight = true;
             h.childForceExpandWidth = false;
             h.childForceExpandHeight = false;
-            Cell(go.transform, name, 170f, style, color, TextAnchor.MiddleLeft, false);
-            Cell(go.transform, src, 150f, style, color, TextAnchor.MiddleLeft, true);
-            Cell(go.transform, power, 50f, style, color, TextAnchor.MiddleRight, false);
-            Cell(go.transform, dur, 112f, style, color, TextAnchor.MiddleLeft, false);
+            Cell(go.transform, name, 132f, style, color, TextAnchor.MiddleLeft, false);
+            Cell(go.transform, src, 110f, style, color, TextAnchor.MiddleLeft, true);
+            Cell(go.transform, power, 38f, style, color, TextAnchor.MiddleRight, false);
+            Cell(go.transform, dur, 84f, style, color, TextAnchor.MiddleLeft, false);
         }
 
         private static void Cell(Transform row, string text, float width, FontStyle style, Color32 color, TextAnchor align, bool shrink)
         {
-            var t = Label(row, text, 13, style, color);
+            var t = Label(row, text, 10, style, color);
             t.alignment = align;
             t.horizontalOverflow = HorizontalWrapMode.Wrap;
             t.verticalOverflow = VerticalWrapMode.Truncate;
             t.raycastTarget = false;
-            if (shrink) { t.resizeTextForBestFit = true; t.resizeTextMinSize = 9; t.resizeTextMaxSize = 13; }
+            if (shrink) { t.resizeTextForBestFit = true; t.resizeTextMinSize = 8; t.resizeTextMaxSize = 10; }
             var le = t.gameObject.AddComponent<LayoutElement>();
             le.preferredWidth = width; le.minWidth = width; le.preferredHeight = RowH - 2f; le.minHeight = RowH - 2f;
         }
@@ -382,6 +408,7 @@ namespace NewAgeQoL
 
             var go = UnityEngine.Object.Instantiate(proto.gameObject, proto.transform.parent);
             go.name = "QoLEffectsButton";
+            SkillList.Veil(go, false);
             go.transform.SetSiblingIndex(proto.transform.GetSiblingIndex() + 1);
             var cBottomText = AccessTools.Field(typeof(BaseCommandButton), "BottomText")?.GetValue(go.GetComponent<BaseCommandButton>()) as Text;
             var cButton = AccessTools.Field(typeof(BaseStateButton), "Button")?.GetValue(go.GetComponent<BaseStateButton>()) as Button;
@@ -490,10 +517,10 @@ namespace NewAgeQoL
             closeGo.transform.SetParent(_panelGo.transform, false);
             var crt = (RectTransform)closeGo.transform;
             crt.anchorMin = crt.anchorMax = new Vector2(1f, 1f); crt.pivot = new Vector2(1f, 1f);
-            crt.sizeDelta = new Vector2(30f, 30f); crt.anchoredPosition = new Vector2(-8f, -8f);
+            crt.sizeDelta = new Vector2(24f, 24f); crt.anchoredPosition = new Vector2(-6f, -6f);
             closeGo.GetComponent<Image>().color = new Color(0.6f, 0.15f, 0.1f, 1f);
             closeGo.GetComponent<Button>().onClick.AddListener(Close);
-            var x = Label(closeGo.transform, "X", 18, FontStyle.Bold, Color.white);
+            var x = Label(closeGo.transform, "X", 14, FontStyle.Bold, Color.white);
             Place(x.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
         }
 

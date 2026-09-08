@@ -15,21 +15,11 @@ namespace NewAgeQoL
         private static RoundType _phase = RoundType.UNKNOWN_ROUND;
         private static float _at;
         private static float _fightAt;
+        private static float _sampleAt;
 
         internal static bool Enabled => Plugin.CfgSounds == null || Plugin.CfgSounds.Value;
-        private static float Volume
-        {
-            get
-            {
-                try
-                {
-                    var gs = GameSettings.Instance;
-                    if (gs != null) return Mathf.Clamp01(gs.SoundVolume);
-                }
-                catch { }
-                return 1f;
-            }
-        }
+        private static float Volume =>
+            Plugin.CfgSoundVolume == null ? 1f : Mathf.Clamp01(Plugin.CfgSoundVolume.Value);
         internal static bool PmOn => Enabled && (Plugin.CfgSoundPm == null || Plugin.CfgSoundPm.Value);
         internal static bool FightOn => Enabled && (Plugin.CfgSoundFight == null || Plugin.CfgSoundFight.Value);
         internal static bool RoundOn => Enabled && (Plugin.CfgSoundRound == null || Plugin.CfgSoundRound.Value);
@@ -65,6 +55,13 @@ namespace NewAgeQoL
             if (PmOn) Play("pm");
         }
 
+        internal static void Sample()
+        {
+            if (Time.unscaledTime < _sampleAt) return;
+            _sampleAt = Time.unscaledTime + 0.25f;
+            Play("pm");
+        }
+
         internal static void Team()
         {
             if (Enabled && (Plugin.CfgSoundTeam == null || Plugin.CfgSoundTeam.Value)) Play("pm");
@@ -78,27 +75,17 @@ namespace NewAgeQoL
                 if (clip == null) return;
                 float volume = Volume;
                 if (volume <= 0.001f) return;
-                AudioSource src = null;
-                try
+                if (_own == null)
                 {
-                    var am = AudioManager.Instance;
-                    if (am != null) src = AccessTools.Field(typeof(AudioManager), "UISoundAudioSource")?.GetValue(am) as AudioSource;
+                    var go = new GameObject("QoLSounds", typeof(AudioSource));
+                    UnityEngine.Object.DontDestroyOnLoad(go);
+                    _own = go.GetComponent<AudioSource>();
+                    _own.playOnAwake = false;
+                    _own.spatialBlend = 0f;
+                    _own.bypassListenerEffects = true;
                 }
-                catch { }
-                if (src == null)
-                {
-                    if (_own == null)
-                    {
-                        var go = new GameObject("QoLSounds", typeof(AudioSource));
-                        UnityEngine.Object.DontDestroyOnLoad(go);
-                        _own = go.GetComponent<AudioSource>();
-                        _own.playOnAwake = false;
-                        _own.spatialBlend = 0f;
-                    }
-                    src = _own;
-                }
-                src.volume = volume;
-                src.PlayOneShot(clip);
+                _own.volume = 1f;
+                _own.PlayOneShot(clip, volume);
             }
             catch (Exception e) { Plugin.Trace("[звук] " + name + ": " + e.Message); }
         }

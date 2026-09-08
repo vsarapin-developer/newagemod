@@ -61,10 +61,16 @@ namespace NewAgeQoL
             _shown.Clear();
         }
 
+        internal static bool EscapeClose()
+        {
+            if (_canvas == null) return false;
+            Close();
+            return true;
+        }
+
         internal static void Tick()
         {
             if (_canvas == null) return;
-            if (Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
             if (Time.unscaledTime < _refreshAt) return;
             _refreshAt = Time.unscaledTime + 0.3f;
 

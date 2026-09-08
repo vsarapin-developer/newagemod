@@ -14,6 +14,7 @@ namespace NewAgeQoL
         private const float PanelW = 420f;
         private const float PanelH = 480f;
         private const float MinH = 260f;
+        private const float MinW = 404f;
         private const float TopH = 56f;
         private const float GripH = 14f;
 
@@ -28,6 +29,8 @@ namespace NewAgeQoL
         private static CanvasGroup _rowsFade;
         private static Button _refresh;
         private static InputField _filter;
+        private static Text _modeText;
+        private static bool _byClan;
         private static string _query = "";
         private static int _seenVersion = -1;
         private static float _pollAt;
@@ -57,6 +60,14 @@ namespace NewAgeQoL
         {
             try
             {
+                string trouble = OnlineList.SameOne();
+                if (trouble != null)
+                {
+                    Notice.Show(trouble, 7f);
+                    Plugin.Log?.LogWarning("[онлайн] " + trouble);
+                    return;
+                }
+                _query = "";
                 Build();
                 _wantOpen = true;
                 _seenVersion = -1;
@@ -105,6 +116,7 @@ namespace NewAgeQoL
             _status = null;
             _refresh = null;
             _filter = null;
+            _modeText = null;
             Pending.Clear();
         }
 
@@ -179,9 +191,10 @@ namespace NewAgeQoL
             var prt = (RectTransform)_panelGo.transform;
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 1f);
-            float h; Vector2 pos;
-            LoadRect(out pos, out h);
-            prt.sizeDelta = new Vector2(PanelW, h);
+            _byClan = Plugin.CfgOnlineByClan != null && Plugin.CfgOnlineByClan.Value;
+            float h, w; Vector2 pos;
+            LoadRect(out pos, out h, out w);
+            prt.sizeDelta = new Vector2(w, h);
             prt.anchoredPosition = pos;
             var pimg = _panelGo.GetComponent<Image>();
             pimg.color = new Color(0.14f, 0.10f, 0.07f, 0.97f);
@@ -212,10 +225,33 @@ namespace NewAgeQoL
             var gripMark = Label(gripGo.transform, "• • •", 12, FontStyle.Bold, new Color32(230, 210, 170, 200));
             Place(gripMark.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
 
-            _title = Label(_panelGo.transform, "Кто в игре", 24, FontStyle.Bold, new Color32(255, 224, 130, 255));
-            Place(_title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(18f, -50f), new Vector2(-70f, -8f));
+            var sideGo = new GameObject("gripSide", typeof(RectTransform), typeof(Image), typeof(DragResize));
+            sideGo.transform.SetParent(_panelGo.transform, false);
+            Place((RectTransform)sideGo.transform, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0.5f), new Vector2(-GripH, GripH), new Vector2(0f, -TopH));
+            sideGo.GetComponent<Image>().color = new Color(0.55f, 0.42f, 0.22f, 0.35f);
+            var wider = sideGo.GetComponent<DragResize>();
+            wider.Target = prt;
+            wider.Canvas = canvas;
+            wider.Min = 0f;
+            wider.MinWide = MinW;
+            wider.OnDone = SaveRect;
+            var sideMark = Label(sideGo.transform, "•\n•\n•", 12, FontStyle.Bold, new Color32(230, 210, 170, 200));
+            Place(sideMark.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+
+            _title = Label(_panelGo.transform, "Кто в игре", 20, FontStyle.Bold, new Color32(255, 224, 130, 255));
+            Place(_title.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(18f, -45f), new Vector2(184f, -13f));
             _title.raycastTarget = false;
             _title.alignment = TextAnchor.MiddleLeft;
+            _title.verticalOverflow = VerticalWrapMode.Truncate;
+            _title.resizeTextForBestFit = true;
+            _title.resizeTextMinSize = 12;
+            _title.resizeTextMaxSize = 20;
+
+            var mode = MakeGameButton(_panelGo.transform, "", 118f, BarH, SwitchMode);
+            Place((RectTransform)mode.transform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(192f, -50f), new Vector2(310f, -8f));
+            _modeText = mode.GetComponentInChildren<Text>(true);
+            if (_modeText != null) _modeText.supportRichText = true;
+            PaintMode();
 
             MakeCloseButton(_panelGo.transform, Close);
 
@@ -231,6 +267,7 @@ namespace NewAgeQoL
             hlg.childForceExpandHeight = true;
 
             _filter = MakeInput(barGo.transform, 168f, "поиск по нику");
+            _filter.text = _query;
             _filter.onValueChanged.AddListener(v => { _query = Norm(v); Rebuild(); });
             _refresh = MakeGameButton(barGo.transform, "Обновить", 118f, BarH, () => { if (!OnlineList.Busy) OnlineList.Refresh(); });
             _status = Label(barGo.transform, "", 13, FontStyle.Normal, new Color32(220, 205, 170, 255));
@@ -281,25 +318,27 @@ namespace NewAgeQoL
             MakeScrollbar(_panelGo.transform);
         }
 
-        private static void LoadRect(out Vector2 pos, out float h)
+        private static void LoadRect(out Vector2 pos, out float h, out float w)
         {
             pos = new Vector2(0f, PanelH * 0.5f);
             h = PanelH;
+            w = PanelW;
             try
             {
                 var parts = (Plugin.CfgOnlineWindow?.Value ?? "").Split(';');
-                if (parts.Length == 3)
+                if (parts.Length < 3) return;
+                float x, y, hh;
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                if (float.TryParse(parts[0], System.Globalization.NumberStyles.Float, ci, out x)
+                    && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, ci, out y)
+                    && float.TryParse(parts[2], System.Globalization.NumberStyles.Float, ci, out hh))
                 {
-                    float x, y, hh;
-                    var ci = System.Globalization.CultureInfo.InvariantCulture;
-                    if (float.TryParse(parts[0], System.Globalization.NumberStyles.Float, ci, out x)
-                        && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, ci, out y)
-                        && float.TryParse(parts[2], System.Globalization.NumberStyles.Float, ci, out hh))
-                    {
-                        pos = new Vector2(x, y);
-                        h = Mathf.Max(MinH, hh);
-                    }
+                    pos = new Vector2(x, y);
+                    h = Mathf.Max(MinH, hh);
                 }
+                float ww;
+                if (parts.Length > 3 && float.TryParse(parts[3], System.Globalization.NumberStyles.Float, ci, out ww))
+                    w = Mathf.Max(MinW, ww);
             }
             catch { }
         }
@@ -311,7 +350,8 @@ namespace NewAgeQoL
                 if (_panelGo == null || Plugin.CfgOnlineWindow == null) return;
                 var rt = (RectTransform)_panelGo.transform;
                 var ci = System.Globalization.CultureInfo.InvariantCulture;
-                Plugin.CfgOnlineWindow.Value = rt.anchoredPosition.x.ToString("0", ci) + ";" + rt.anchoredPosition.y.ToString("0", ci) + ";" + rt.sizeDelta.y.ToString("0", ci);
+                Plugin.CfgOnlineWindow.Value = rt.anchoredPosition.x.ToString("0", ci) + ";" + rt.anchoredPosition.y.ToString("0", ci)
+                                               + ";" + rt.sizeDelta.y.ToString("0", ci) + ";" + rt.sizeDelta.x.ToString("0", ci);
             }
             catch { }
         }
@@ -344,40 +384,128 @@ namespace NewAgeQoL
         {
             if (_rows == null) return;
             var players = OnlineList.Players;
-            players.Sort((a, b) =>
-            {
-                int c = b.Level.CompareTo(a.Level);
-                return c != 0 ? c : string.Compare(a.Login, b.Login, StringComparison.OrdinalIgnoreCase);
-            });
+            players.Sort(ByLevel);
             OnlineList.AskClanCodes(players);
 
             for (int i = _rows.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(_rows.GetChild(i).gameObject);
             Pending.Clear();
 
-            int shown = 0;
+            var shown = new List<OnlinePlayer>();
             foreach (var p in players)
-            {
-                if (_query.Length > 0 && Norm(p.Login).IndexOf(_query, StringComparison.Ordinal) < 0) continue;
-                try { AddRow(p); shown++; }
-                catch (Exception e) { Plugin.Trace("[онлайн] строка " + p.Login + ": " + e.Message); }
-            }
+                if (_query.Length == 0 || Norm(p.Login).IndexOf(_query, StringComparison.Ordinal) >= 0) shown.Add(p);
+
+            if (_byClan) ByClans(shown);
+            else foreach (var p in shown) Line(p);
 
             bool busy = OnlineList.Busy;
-            if (_title != null) _title.text = busy
-                ? "Кто в игре: обновляю…"
-                : "Кто в игре" + (players.Count > 0 ? ": " + players.Count : "") + (_query.Length > 0 ? " · показано " + shown : "");
+            if (_title != null) _title.text = "Кто в игре" + (players.Count > 0 ? ": " + players.Count : "");
             if (_rowsFade != null) _rowsFade.alpha = busy ? 0.4f : 1f;
             if (_status != null)
             {
                 string st = OnlineList.Status ?? "";
                 int dot = st.IndexOf("· ", StringComparison.Ordinal);
                 if (st.StartsWith("В игре:", StringComparison.Ordinal) && dot >= 0) st = st.Substring(dot + 2);
+                if (_query.Length > 0) st = "найдено " + shown.Count + (st.Length > 0 ? " · " + st : "");
                 _status.text = players.Count == 0 && !OnlineList.Busy && !OnlineList.Configured
                     ? "нет запасного аккаунта"
                     : st;
             }
             if (_refresh != null) _refresh.interactable = !busy;
             if (_scroll != null) _scroll.verticalNormalizedPosition = 1f;
+        }
+
+        private static int ByLevel(OnlinePlayer a, OnlinePlayer b)
+        {
+            int c = b.Level.CompareTo(a.Level);
+            return c != 0 ? c : string.Compare(a.Login, b.Login, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void Line(OnlinePlayer p)
+        {
+            try { AddRow(p); }
+            catch (Exception e) { Plugin.Trace("[онлайн] строка " + p.Login + ": " + e.Message); }
+        }
+
+        private static void ByClans(List<OnlinePlayer> list)
+        {
+            var order = new List<string>();
+            var groups = new Dictionary<string, List<OnlinePlayer>>();
+            foreach (var p in list)
+            {
+                string key = p.Clan ?? "";
+                List<OnlinePlayer> one;
+                if (!groups.TryGetValue(key, out one)) { one = new List<OnlinePlayer>(); groups[key] = one; order.Add(key); }
+                one.Add(p);
+            }
+            order.Sort((a, b) =>
+            {
+                if (a.Length == 0 || b.Length == 0) return a.Length == b.Length ? 0 : (a.Length == 0 ? 1 : -1);
+                int c = groups[b].Count.CompareTo(groups[a].Count);
+                return c != 0 ? c : string.Compare(ClanTitle(a), ClanTitle(b), StringComparison.OrdinalIgnoreCase);
+            });
+            foreach (var key in order)
+            {
+                var one = groups[key];
+                one.Sort(ByLevel);
+                AddHead(ClanTitle(key), one.Count);
+                foreach (var p in one) Line(p);
+            }
+        }
+
+        private static string ClanTitle(string icon)
+        {
+            if (string.IsNullOrEmpty(icon)) return "Без клана";
+            string name = OnlineList.ClanName(icon);
+            return name.Length > 0 ? name : icon;
+        }
+
+        private static void AddHead(string name, int count)
+        {
+            var go = new GameObject("QoLClan", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            go.transform.SetParent(_rows, false);
+            var img = go.GetComponent<Image>();
+            img.color = new Color(0.33f, 0.24f, 0.10f, 0.95f);
+            img.sprite = Rounded(8);
+            img.type = Image.Type.Sliced;
+            img.raycastTarget = false;
+            var le = go.GetComponent<LayoutElement>();
+            le.preferredHeight = 30f; le.minHeight = 30f; le.flexibleWidth = 1f;
+
+            var barGo = new GameObject("mark", typeof(RectTransform), typeof(Image));
+            barGo.transform.SetParent(go.transform, false);
+            Place((RectTransform)barGo.transform, new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(4f, 5f), new Vector2(8f, -5f));
+            var mark = barGo.GetComponent<Image>();
+            mark.color = new Color32(255, 200, 90, 255);
+            mark.raycastTarget = false;
+
+            var t = Label(go.transform, name, 16, FontStyle.Bold, new Color32(255, 224, 130, 255));
+            t.alignment = TextAnchor.MiddleLeft;
+            t.raycastTarget = false;
+            t.horizontalOverflow = HorizontalWrapMode.Overflow;
+            t.verticalOverflow = VerticalWrapMode.Truncate;
+            Place(t.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(16f, 0f), new Vector2(-64f, 0f));
+
+            var n = Label(go.transform, count.ToString(), 15, FontStyle.Bold, new Color32(235, 215, 175, 255));
+            n.alignment = TextAnchor.MiddleRight;
+            n.raycastTarget = false;
+            n.horizontalOverflow = HorizontalWrapMode.Overflow;
+            Place(n.rectTransform, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0.5f), new Vector2(-60f, 0f), new Vector2(-12f, 0f));
+        }
+
+        private static void PaintMode()
+        {
+            if (_modeText == null) return;
+            _modeText.text = _byClan
+                ? "Кланы: <color=#b6ffb0>ВКЛ</color>"
+                : "Кланы: <color=#ffc9c2>ВЫКЛ</color>";
+        }
+
+        private static void SwitchMode()
+        {
+            _byClan = !_byClan;
+            if (Plugin.CfgOnlineByClan != null) Plugin.CfgOnlineByClan.Value = _byClan;
+            PaintMode();
+            Rebuild();
         }
 
         private static void AddRow(OnlinePlayer p)
@@ -490,7 +618,9 @@ namespace NewAgeQoL
             le.preferredWidth = width; le.minWidth = width; le.preferredHeight = height; le.minHeight = height;
 
             var t = Label(go.transform, text, 16, FontStyle.Bold, Color.white);
-            Place(t.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(16f, 9f), new Vector2(-16f, -9f));
+            float padX = Mathf.Min(16f, width * 0.12f);
+            float padY = Mathf.Min(9f, height * 0.16f);
+            Place(t.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(padX, padY), new Vector2(-padX, -padY));
             t.resizeTextForBestFit = true;
             t.resizeTextMinSize = 10;
             t.resizeTextMaxSize = 16;
@@ -681,6 +811,7 @@ namespace NewAgeQoL
         internal RectTransform Target;
         internal Canvas Canvas;
         internal float Min = 200f;
+        internal float MinWide;
         internal Action OnDone;
 
         public void OnDrag(PointerEventData e)
@@ -688,9 +819,20 @@ namespace NewAgeQoL
             if (Target == null) return;
             float s = Canvas != null && Canvas.scaleFactor > 0f ? Canvas.scaleFactor : 1f;
             var area = Canvas != null ? (RectTransform)Canvas.transform : null;
-            float max = area != null ? area.rect.height - 20f : 2000f;
-            float h = Mathf.Clamp(Target.sizeDelta.y - e.delta.y / s, Min, max);
-            Target.sizeDelta = new Vector2(Target.sizeDelta.x, h);
+            var size = Target.sizeDelta;
+            if (Min > 0f)
+            {
+                float max = area != null ? area.rect.height - 20f : 2000f;
+                size.y = Mathf.Clamp(size.y - e.delta.y / s, Min, max);
+            }
+            if (MinWide > 0f)
+            {
+                float max = area != null ? area.rect.width - 20f : 3000f;
+                float wide = Mathf.Clamp(size.x + e.delta.x / s, MinWide, Mathf.Max(MinWide, max));
+                Target.anchoredPosition += new Vector2((wide - size.x) * 0.5f, 0f);
+                size.x = wide;
+            }
+            Target.sizeDelta = size;
         }
 
         public void OnEndDrag(PointerEventData e) => OnDone?.Invoke();

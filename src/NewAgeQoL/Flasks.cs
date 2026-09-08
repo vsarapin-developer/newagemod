@@ -37,6 +37,9 @@ namespace NewAgeQoL
         private static readonly Dictionary<int, string> Images = new Dictionary<int, string>();
         private static readonly Dictionary<int, string> Names = new Dictionary<int, string>();
         private static readonly Dictionary<string, Sprite> Icons = new Dictionary<string, Sprite>();
+        private static readonly Dictionary<string, Sprite> Sharp = new Dictionary<string, Sprite>();
+        private static readonly Dictionary<int, int[]> Facts = new Dictionary<int, int[]>();
+        private static readonly Dictionary<int, int> Uses = new Dictionary<int, int>();
         private static readonly HashSet<int> AskedInfo = new HashSet<int>();
         private static readonly HashSet<string> Loading = new HashSet<string>();
 
@@ -156,11 +159,17 @@ namespace NewAgeQoL
             lock (Images) image = Images.TryGetValue(id, out var img) ? img : null;
             if (string.IsNullOrEmpty(image)) { AskInfo(id); return Fallback(); }
 
+            if (Sharp.TryGetValue(image, out var crisp))
+            {
+                if (crisp != null && crisp.texture != null) return crisp;
+                Sharp.Remove(image);
+                Loading.Remove(image);
+            }
+            LoadRemote(image);
             if (Icons.TryGetValue(image, out var known))
             {
                 if (known != null && known.texture != null) return known;
                 Icons.Remove(image);
-                Loading.Remove(image);
             }
             try
             {
@@ -168,7 +177,6 @@ namespace NewAgeQoL
                 if (s != null && s.name != "unknown") { Icons[image] = s; return s; }
             }
             catch { }
-            LoadRemote(image);
             return Fallback();
         }
 
@@ -183,12 +191,81 @@ namespace NewAgeQoL
             return list;
         }
 
+        internal static string ImageOf(int thingId)
+        {
+            lock (Images) return Images.TryGetValue(thingId, out var img) && !string.IsNullOrEmpty(img) ? img : null;
+        }
+
+        internal static int RarityOf(int thingId)
+        {
+            lock (Facts) return Facts.TryGetValue(thingId, out var f) ? f[1] : 0;
+        }
+
+        internal static int LevelOf(int thingId)
+        {
+            lock (Facts) return Facts.TryGetValue(thingId, out var f) ? f[2] : 0;
+        }
+
+        internal static bool CanWear(int thingId)
+        {
+            int mask;
+            lock (Uses) return Uses.TryGetValue(thingId, out mask) && mask == 0;
+        }
+
+        internal static void NoteUse(int thingId, int canUse)
+        {
+            if (thingId <= 0) return;
+            lock (Uses) Uses[thingId] = canUse;
+        }
+
+        internal static bool UseKnown(int thingId)
+        {
+            lock (Uses) return Uses.ContainsKey(thingId);
+        }
+
+        internal static void Note(int thingId, string image, int subType, int rarity, int level)
+        {
+            if (thingId <= 0) return;
+            if (!string.IsNullOrEmpty(image)) lock (Images) Images[thingId] = image;
+            lock (Facts)
+            {
+                if (!Facts.TryGetValue(thingId, out var f) || f == null) f = new int[4];
+                if (subType > 0) f[0] = subType;
+                if (rarity > 0) f[1] = rarity;
+                if (level > 0) f[2] = level;
+                Facts[thingId] = f;
+            }
+        }
+
+        internal static void AskName(int thingId)
+        {
+            if (thingId <= 0 || NameOf(thingId) != null) return;
+            AskInfo(thingId);
+        }
+
+        internal static List<int> BagThings()
+        {
+            var seen = new HashSet<int>();
+            var list = new List<int>();
+            lock (Scanned)
+                foreach (var one in Scanned)
+                    if (one.Qty > 0 && seen.Add(one.ThingId))
+                        list.Add(one.ThingId);
+            return list;
+        }
+
         internal static bool Scanning => _scanBusy;
 
         internal static int SubTypeOf(int thingId)
         {
             lock (Scanned) foreach (var s in Scanned) if (s.ThingId == thingId) return s.SubType;
+            lock (Facts) if (Facts.TryGetValue(thingId, out var f) && f[0] > 0) return f[0];
             return 0;
+        }
+
+        internal static bool Known(int thingId)
+        {
+            lock (Facts) return Facts.ContainsKey(thingId);
         }
 
         internal static int QtyOf(int thingId)
@@ -235,7 +312,7 @@ namespace NewAgeQoL
             {
                 RemoteImageLoader.Instance.Load(
                     "https://files.nura.biz/site/images/things100x100/" + image + ".png",
-                    sprite => { if (sprite != null) Icons[image] = sprite; },
+                    sprite => { if (sprite != null) Sharp[image] = sprite; },
                     error => Plugin.Trace("[flasks] картинка «" + image + "» не загрузилась: " + error));
             }
             catch { }
@@ -671,6 +748,8 @@ namespace NewAgeQoL
                             Qty = ii.Quantity,
                             SubType = th.SubType,
                         });
+                        NoteUse(th.ThingId, ii.CanUse ?? 0);
+                        Note(th.ThingId, th.Image, th.SubType, th.Rarity, th.Level);
                     }
                 }
             }
@@ -702,7 +781,10 @@ namespace NewAgeQoL
 
         private static void OnThingInfo(object m)
         {
-            if (m is GeneralThingInfoMessage info) Learn(info.ThingId, info.Image, info.Name);
+            if (!(m is GeneralThingInfoMessage info)) return;
+            Learn(info.ThingId, info.Image, info.Name);
+            lock (Facts)
+                Facts[info.ThingId] = new[] { info.SubType, info.Rarity, info.Level ?? 0, info.PreferableClassMask ?? 0 };
         }
 
         private static void OnAction(object m)
@@ -713,6 +795,59 @@ namespace NewAgeQoL
                 foreach (var ch in r.ChangesInTab)
                     if (ch.Id == r.Id) { left = ch.Quantity; break; }
             lock (Ctx) Ctx[r.Id] = (r.Success, r.Success ? null : r.ErrorMessage, left);
+            if (r.Success) Bought(r);
+        }
+
+        private static void Bought(ThingContextActionResponseMessage r)
+        {
+            try
+            {
+                if (r.ChangesInTab == null || r.ChangesInTab.Count == 0) return;
+
+                bool ours = false;
+                for (int row = 0; row < Rows && !ours; row++)
+                {
+                    int id = Thing(row);
+                    if (id <= 0) continue;
+                    foreach (var ch in r.ChangesInTab)
+                        if (ch != null && ch.ThingId == id) { ours = true; break; }
+                }
+                if (!ours && r.ButtonId != (int)EThingActionButton.BUY) return;
+
+                if (ours && r.WindowId == WinInventory)
+                {
+                    lock (Scanned)
+                    {
+                        foreach (var ch in r.ChangesInTab)
+                        {
+                            if (ch == null) continue;
+                            Note(ch.ThingId, ch.Image, ch.SubType, ch.Rarity, ch.Level);
+                            NoteUse(ch.ThingId, ch.CanUseMask);
+                            int at = -1;
+                            for (int i = 0; i < Scanned.Count; i++) if (Scanned[i].Inv == ch.Id) { at = i; break; }
+                            if (ch.Quantity <= 0)
+                            {
+                                if (at >= 0) Scanned.RemoveAt(at);
+                                continue;
+                            }
+                            var stack = new Stack
+                            {
+                                Inv = ch.Id,
+                                Tab = at >= 0 ? Scanned[at].Tab : r.TabId,
+                                ThingId = ch.ThingId,
+                                Qty = ch.Quantity,
+                                SubType = ch.SubType,
+                            };
+                            if (at >= 0) Scanned[at] = stack; else Scanned.Add(stack);
+                        }
+                    }
+                    UpdateCounts();
+                }
+
+                RequestScan();
+                Plugin.Trace("[банки] покупка: пересчитываю остатки");
+            }
+            catch (System.Exception e) { Plugin.Trace("[банки] покупка: " + e.Message); }
         }
 
         private static bool Take(int inv, out bool ok, out string err, out int left)

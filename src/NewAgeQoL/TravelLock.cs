@@ -1,4 +1,4 @@
-using HarmonyLib;
+﻿using HarmonyLib;
 
 namespace NewAgeQoL
 {
@@ -18,7 +18,7 @@ namespace NewAgeQoL
         internal static void Refuse()
         {
             try { Preloader.Close(); } catch { }
-            try { AirMessageScript.ShowInformationNotification("Артефакты: подожди, идёт работа с хранилищем"); }
+            try { AirMessageScript.ShowInformationNotification("Подожди, идёт работа с хранилищем"); }
             catch { }
         }
 

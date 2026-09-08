@@ -93,13 +93,41 @@ namespace NewAgeQoL
                 if (key == _lastKey && Time.unscaledTime - _lastAt < 1.5f) return;
                 _lastKey = key;
                 _lastAt = Time.unscaledTime;
+                bool named = me > 0 && msg.ReceiverId.HasValue && msg.ReceiverId.Value == me;
+                bool mention = team && !mine && (named || Mentioned(msg.Text));
+                string to = team ? (msg.Receiver ?? "").Trim() : "";
                 if (team) Sounds.Team(); else Sounds.Pm();
-                if (team ? TeamEnabled : Enabled) Show(msg.SenderId, msg.Sender, msg.Text, team);
+                if (team ? TeamEnabled : Enabled) Show(msg.SenderId, msg.Sender, msg.Text, team, mention, to);
             }
             catch (Exception e) { Plugin.Trace("[личка] сообщение: " + e.Message); }
         }
 
-        private static void Show(int senderId, string sender, string text, bool team)
+        private static bool Mentioned(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            string me = ChatHighlight.Login();
+            return !string.IsNullOrEmpty(me) && me.Length >= 2
+                   && text.IndexOf(me, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string Mark(string text)
+        {
+            string me = ChatHighlight.Login();
+            if (string.IsNullOrEmpty(me) || string.IsNullOrEmpty(text)) return text;
+            var built = new System.Text.StringBuilder();
+            int from = 0;
+            while (true)
+            {
+                int at = text.IndexOf(me, from, StringComparison.OrdinalIgnoreCase);
+                if (at < 0) { built.Append(text, from, text.Length - from); break; }
+                built.Append(text, from, at - from);
+                built.Append("<color=#9bf08f><b>").Append(text, at, me.Length).Append("</b></color>");
+                from = at + me.Length;
+            }
+            return built.ToString();
+        }
+
+        private static void Show(int senderId, string sender, string text, bool team, bool mention, string to)
         {
             Build();
             while (Live.Count >= Max)
@@ -110,7 +138,7 @@ namespace NewAgeQoL
             }
             if (text.Length > 220) text = text.Substring(0, 220) + "…";
             Image bg; Shadow sh;
-            var go = BuildCard(_stack, sender, text, Opacity, team, out bg, out sh);
+            var go = BuildCard(_stack, sender, text, Opacity, team, out bg, out sh, mention, to);
             var toast = new Toast { Go = go, Group = go.GetComponent<CanvasGroup>(), Bg = bg, Sh = sh, Until = Time.unscaledTime + Seconds };
             var btn = go.GetComponent<Button>();
             btn.onClick.AddListener(() =>
@@ -122,7 +150,7 @@ namespace NewAgeQoL
             Live.Add(toast);
         }
 
-        internal static GameObject BuildCard(Transform parent, string sender, string text, float opacity, bool team, out Image bg, out Shadow sh)
+        internal static GameObject BuildCard(Transform parent, string sender, string text, float opacity, bool team, out Image bg, out Shadow sh, bool mention = false, string to = null)
         {
             var go = new GameObject("QoLToast", typeof(RectTransform), typeof(Image), typeof(Shadow), typeof(Button), typeof(CanvasGroup), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
@@ -137,11 +165,13 @@ namespace NewAgeQoL
             bar.transform.SetParent(go.transform, false);
             var brt = (RectTransform)bar.transform;
             brt.anchorMin = new Vector2(0f, 0f); brt.anchorMax = new Vector2(0f, 1f); brt.pivot = new Vector2(0f, 0.5f);
-            brt.offsetMin = new Vector2(7f, 10f); brt.offsetMax = new Vector2(11f, -10f);
+            brt.offsetMin = new Vector2(7f, 10f); brt.offsetMax = new Vector2(mention ? 13f : 11f, -10f);
             var bimg = bar.GetComponent<Image>();
             bimg.sprite = OnlineWindow.Rounded(4);
             bimg.type = Image.Type.Sliced;
-            bimg.color = team ? new Color32(110, 180, 255, 230) : new Color32(255, 200, 90, 230);
+            bimg.color = mention ? new Color32(120, 235, 110, 240)
+                       : team ? new Color32(110, 180, 255, 230)
+                       : new Color32(255, 200, 90, 230);
             bimg.raycastTarget = false;
             bar.AddComponent<LayoutElement>().ignoreLayout = true;
             var vlg = go.GetComponent<VerticalLayoutGroup>();
@@ -157,10 +187,15 @@ namespace NewAgeQoL
             var le = go.GetComponent<LayoutElement>();
             le.preferredWidth = ToastW; le.minWidth = ToastW;
 
-            var head = Label(go.transform, team ? sender + "  ·  команда" : sender, 15, FontStyle.Bold, team ? new Color32(150, 200, 255, 255) : new Color32(255, 214, 110, 255));
+            string who = string.IsNullOrEmpty(to) ? sender : sender + " → " + to;
+            string title = team ? who + "  ·  команда" + (mention ? "  ·  тебе" : "") : sender;
+            var head = Label(go.transform, title, 15, FontStyle.Bold,
+                             mention ? new Color32(155, 240, 143, 255)
+                             : team ? new Color32(150, 200, 255, 255)
+                             : new Color32(255, 214, 110, 255));
             head.alignment = TextAnchor.MiddleLeft;
             head.horizontalOverflow = HorizontalWrapMode.Overflow;
-            var body = Label(go.transform, text, 14, FontStyle.Normal, new Color32(245, 240, 228, 255));
+            var body = Label(go.transform, mention ? Mark(text) : text, 14, FontStyle.Normal, new Color32(245, 240, 228, 255));
             body.alignment = TextAnchor.UpperLeft;
             body.horizontalOverflow = HorizontalWrapMode.Wrap;
             body.verticalOverflow = VerticalWrapMode.Truncate;

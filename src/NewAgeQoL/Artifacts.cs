@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Transport.Messages.Responses.Things.Actions;
@@ -45,6 +45,10 @@ namespace NewAgeQoL
         private static int _tabsWindow = int.MinValue;
         private static int _tabsAltWindow = int.MinValue;
         private static bool _gotWear;
+        private static bool _lastOk;
+        private static bool _exact;
+        private static string _lastErr = "";
+        private static bool _put;
         private static bool _listeners;
 
         private static string Saved
@@ -55,7 +59,33 @@ namespace NewAgeQoL
 
         internal static bool HasStash => !string.IsNullOrEmpty(Saved.Trim());
 
+        internal static Dictionary<int, InventoryWearResponseMessageItem> WornSlots()
+        {
+            var map = new Dictionary<int, InventoryWearResponseMessageItem>();
+            foreach (var w in Worn)
+                if (w != null && w.SlotId > 0 && !map.ContainsKey(w.SlotId)) map[w.SlotId] = w;
+            return map;
+        }
+
+        internal static Dictionary<int, int> WornMap()
+        {
+            var map = new Dictionary<int, int>();
+            foreach (var w in Worn)
+                if (w != null && w.ThingId > 0 && !map.ContainsKey(w.ThingId)) map[w.ThingId] = w.SlotId;
+            return map;
+        }
+
         private static void Forget() => Saved = "";
+
+        internal static int Pending => Recall().Count;
+
+        internal static void ForgetStash()
+        {
+            Forget();
+            ManikinOn = false;
+            KeepTaken(new Dictionary<int, int>());
+            Say("список возврата очищен");
+        }
 
         internal static void Stash()
         {
@@ -74,6 +104,12 @@ namespace NewAgeQoL
             Busy = true;
             try
             {
+                if (ManikinOn && HasStash)
+                {
+                    Say("запасной набор уже надет, сначала верни вещи");
+                    yield break;
+                }
+
                 yield return Plugin.Instance.StartCoroutine(EnsureStorage());
                 if (!AtStorage()) { Say("не дошёл до хранилища (см. лог)"); yield break; }
 
@@ -86,25 +122,25 @@ namespace NewAgeQoL
                 if (worn.Count > 0)
                 {
                     Say("снимаю надетое: " + worn.Count);
-                    yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
                     int off = 0;
                     foreach (var w in worn)
                     {
                         yield return Plugin.Instance.StartCoroutine(
-                            Act(w.InventoryId, BtnTakeOff, WinInventory, TabOf(w.InventoryId, 1), 1));
+                            Act(w.InventoryId, BtnTakeOff, WinInventory, 1, 1));
                         off++;
                         Step("снимаю надетое: " + off + " из " + worn.Count);
                     }
-                    yield return Wait(0.6f);
+                    yield return Wait(0.2f);
                 }
 
-                Say("собираю артефакты из сумки");
+                Say("собираю вещи для хранилища");
                 yield return Plugin.Instance.StartCoroutine(Scan(WinBox, 380));
                 var art = Scanned.Where(i => i.Rarity == ArtRarity).ToList();
                 if (art.Count == 0)
                 {
                     if (memory.Count > 0) Remember(memory);
-                    else Say("артефактных вещей не нашёл, старый список цел");
+                    else Say("вещей для хранилища не нашёл, старый список цел");
+                    yield return Plugin.Instance.StartCoroutine(DressManikin());
                     yield break;
                 }
 
@@ -125,6 +161,7 @@ namespace NewAgeQoL
 
                 Remember(memory);
                 Say("сдал в хранилище: " + done);
+                yield return Plugin.Instance.StartCoroutine(DressManikin());
             }
             finally { Busy = false; }
         }
@@ -140,8 +177,26 @@ namespace NewAgeQoL
                 yield return Plugin.Instance.StartCoroutine(EnsureStorage());
                 if (!AtStorage()) { Say("не дошёл до хранилища (см. лог)"); yield break; }
 
+                yield return Plugin.Instance.StartCoroutine(ScanWear());
+                yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
+
+                var have = new Dictionary<int, int>();
+                foreach (var w in Worn)
+                {
+                    if (w == null || w.ThingId <= 0) continue;
+                    have.TryGetValue(w.ThingId, out int had);
+                    have[w.ThingId] = had + 1;
+                }
+                foreach (var it in Scanned)
+                {
+                    if (it.ThingId <= 0 || it.Qty <= 0) continue;
+                    have.TryGetValue(it.ThingId, out int had);
+                    have[it.ThingId] = had + it.Qty;
+                }
+
                 Say("смотрю хранилище");
                 yield return Plugin.Instance.StartCoroutine(Scan(WinByLocation, 381));
+                KeepStorage();
                 Plugin.Trace("[art] в хранилище видно " + Scanned.Count + ": "
                                     + string.Join(", ", Scanned.Select(i => i.ThingId + "/стак" + i.Inv + "/вкл" + i.Tab + "/шт" + i.Qty).ToArray()));
 
@@ -150,6 +205,11 @@ namespace NewAgeQoL
                 {
                     need.TryGetValue(m.ThingId, out int n);
                     need[m.ThingId] = n + 1;
+                }
+                foreach (int thing in new List<int>(need.Keys))
+                {
+                    if (!have.TryGetValue(thing, out int mine) || mine <= 0) continue;
+                    need[thing] = need[thing] > mine ? need[thing] - mine : 0;
                 }
 
                 var take = new List<Item>();
@@ -173,17 +233,45 @@ namespace NewAgeQoL
                         done++;
                         Step("забираю из хранилища: " + done + " из " + take.Count);
                     }
-                    yield return Wait(0.8f);
+                    yield return Wait(0.25f);
+                    yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
                 }
                 else Say("в хранилище нет вещей из списка, смотрю сумку");
 
-                yield return Plugin.Instance.StartCoroutine(ScanWear());
-                yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
+                yield return Plugin.Instance.StartCoroutine(UndressManikin(memory));
 
-                var dress = memory
-                    .Where(m => m.SlotId > 0)
-                    .Where(m => !Worn.Any(w => w.SlotId == m.SlotId && w.ThingId == m.ThingId))
-                    .ToList();
+                var already = new Dictionary<int, int>();
+                foreach (var w in Worn)
+                {
+                    if (w == null || w.ThingId <= 0) continue;
+                    already.TryGetValue(w.ThingId, out int had);
+                    already[w.ThingId] = had + 1;
+                }
+
+                var dress = new List<Slot>();
+                foreach (var m in memory.Where(x => x.SlotId > 0).OrderBy(x => x.SlotId))
+                {
+                    if (_exact)
+                    {
+                        bool inPlace = false;
+                        foreach (var w in Worn)
+                            if (w != null && w.SlotId == m.SlotId && w.ThingId == m.ThingId) { inPlace = true; break; }
+                        if (!inPlace) dress.Add(m);
+                        continue;
+                    }
+                    if (already.TryGetValue(m.ThingId, out int left) && left > 0)
+                    {
+                        already[m.ThingId] = left - 1;
+                        continue;
+                    }
+                    dress.Add(m);
+                }
+                if (dress.Count > 0)
+                {
+                    var plan = new System.Text.StringBuilder();
+                    foreach (var d in dress) plan.Append(Name(d.ThingId)).Append(" -> ").Append(Manikin.SlotName(d.SlotId)).Append("; ");
+                    Plugin.Trace("[возврат] надо надеть: " + plan);
+                }
 
                 int back = 0;
                 if (dress.Count > 0)
@@ -197,8 +285,8 @@ namespace NewAgeQoL
                         Say("освобождаю слоты: " + busySlots.Count);
                         foreach (var w in busySlots)
                             yield return Plugin.Instance.StartCoroutine(
-                                Act(w.InventoryId, BtnTakeOff, WinInventory, TabOf(w.InventoryId, 1), 1));
-                        yield return Wait(0.6f);
+                                Act(w.InventoryId, BtnTakeOff, WinInventory, 1, 1));
+                        yield return Wait(0.2f);
                         yield return Plugin.Instance.StartCoroutine(ScanWear());
                         yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
                     }
@@ -207,21 +295,14 @@ namespace NewAgeQoL
                     var used = new HashSet<int>();
                     foreach (var d in dress)
                     {
-                        var found = Scanned.FirstOrDefault(i => i.ThingId == d.ThingId && !used.Contains(i.Inv));
-                        if (found.Inv == 0)
-                        {
-                            Plugin.Log?.LogWarning("[art] в сумке нет вещи " + d.ThingId + " для слота " + d.SlotId);
-                            continue;
-                        }
-                        used.Add(found.Inv);
-                        int button = ExtraSlot(d.SlotId) ? BtnDressExtra : BtnDress;
-                        yield return Plugin.Instance.StartCoroutine(Act(found.Inv, button, WinInventory, found.Tab, 1));
-                        back++;
+                        yield return Plugin.Instance.StartCoroutine(Put(d.ThingId, d.SlotId, used));
+                        if (_put) back++;
                         Step("надеваю: " + back + " из " + dress.Count);
                     }
                 }
 
-                yield return Wait(0.5f);
+                yield return Wait(0.2f);
+                yield return Plugin.Instance.StartCoroutine(ReturnTaken(memory));
                 yield return Plugin.Instance.StartCoroutine(ScanWear());
                 yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
 
@@ -234,8 +315,21 @@ namespace NewAgeQoL
                     if (!ok) missed.Add(m);
                 }
 
+                if (missed.Count > 0)
+                {
+                    var lost = new System.Text.StringBuilder();
+                    foreach (var m in missed) lost.Append(Name(m.ThingId)).Append(" (").Append(Manikin.SlotName(m.SlotId)).Append("); ");
+                    Plugin.Log?.LogWarning("[возврат] не вернулось: " + lost);
+                    var now = new System.Text.StringBuilder();
+                    foreach (var w in Worn)
+                        if (w != null && w.ThingId > 0)
+                            now.Append(Manikin.SlotName(w.SlotId)).Append('=').Append(Name(w.ThingId)).Append("; ");
+                    Plugin.Log?.LogWarning("[возврат] по итогу надето: " + now);
+                }
+
                 if (missed.Count == 0)
                 {
+                    ManikinOn = false;
                     Forget();
                     Say("вернул " + memory.Count + ", надел " + back);
                 }
@@ -247,6 +341,299 @@ namespace NewAgeQoL
                 }
             }
             finally { Busy = false; }
+        }
+
+        private static bool ManikinOn
+        {
+            get { return Plugin.CfgManikinOn != null && Plugin.CfgManikinOn.Value; }
+            set { if (Plugin.CfgManikinOn != null) Plugin.CfgManikinOn.Value = value; }
+        }
+
+        private static IEnumerator DressManikin()
+        {
+            var plan = Manikin.Saved();
+            if (plan.Count == 0) yield break;
+
+            yield return Plugin.Instance.StartCoroutine(ScanWear());
+            var worn = WornSlots();
+
+            if (!ManikinOn)
+            {
+                var before = Recall();
+                foreach (var pair in worn)
+                {
+                    var w = pair.Value;
+                    if (w == null || w.ThingId <= 0) continue;
+                    if (!before.Any(m => m.ThingId == w.ThingId && m.SlotId == pair.Key))
+                        before.Add(new Slot { ThingId = w.ThingId, SlotId = pair.Key });
+                }
+                Remember(before);
+            }
+
+            var need = new Dictionary<int, int>();
+            foreach (var pair in plan)
+            {
+                int n;
+                need.TryGetValue(pair.Value, out n);
+                need[pair.Value] = n + 1;
+            }
+
+            var stay = new HashSet<int>();
+            foreach (var pair in plan)
+            {
+                InventoryWearResponseMessageItem item;
+                if (!worn.TryGetValue(pair.Key, out item) || item == null || item.ThingId != pair.Value) continue;
+                int n;
+                if (!need.TryGetValue(pair.Value, out n) || n <= 0) continue;
+                need[pair.Value] = n - 1;
+                stay.Add(pair.Key);
+            }
+            var free = new List<InventoryWearResponseMessageItem>();
+            foreach (var pair in worn)
+            {
+                var item = pair.Value;
+                if (item == null || stay.Contains(pair.Key)) continue;
+                free.Add(item);
+            }
+
+            int missing = 0;
+            foreach (var pair in need) if (pair.Value > 0) missing += pair.Value;
+            if (free.Count == 0 && missing == 0) { ManikinOn = true; Say("запасной набор уже надет"); yield break; }
+
+            var wish = new System.Text.StringBuilder();
+            foreach (var pair in need)
+                if (pair.Value > 0) wish.Append(Name(pair.Key)).Append(" x").Append(pair.Value).Append("; ");
+            Plugin.Trace("[набор] надо надеть: " + (wish.Length > 0 ? wish.ToString() : "ничего")
+                                + " | снять лишнего: " + free.Count);
+            Say("переодеваюсь в запасной набор");
+
+            if (free.Count > 0)
+            {
+                Say("освобождаю слоты: " + free.Count);
+                foreach (var w in free)
+                    yield return Plugin.Instance.StartCoroutine(
+                        Act(w.InventoryId, BtnTakeOff, WinInventory, 1, 1));
+                yield return Wait(0.2f);
+            }
+            yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
+
+            var lack = new Dictionary<int, int>();
+            foreach (var pair in need)
+            {
+                if (pair.Value <= 0) continue;
+                int have = 0;
+                foreach (var it in Scanned) if (it.ThingId == pair.Key) have += it.Qty;
+                if (have < pair.Value) lack[pair.Key] = pair.Value - have;
+            }
+
+            if (lack.Count > 0 && AtStorage())
+            {
+                yield return Plugin.Instance.StartCoroutine(Scan(WinByLocation, 381));
+                var take = new List<Item>();
+                foreach (var it in Scanned)
+                {
+                    int left;
+                    if (!lack.TryGetValue(it.ThingId, out left) || left <= 0) continue;
+                    int qty = it.Qty < left ? it.Qty : left;
+                    lack[it.ThingId] = left - qty;
+                    var copy = it;
+                    copy.Qty = qty;
+                    take.Add(copy);
+                }
+                var missed = new System.Text.StringBuilder();
+                foreach (var pair in lack)
+                    if (pair.Value > 0) missed.Append(Name(pair.Key)).Append(" x").Append(pair.Value).Append("; ");
+                if (missed.Length > 0)
+                    Plugin.Log?.LogWarning("[набор] в хранилище не нашлось: " + missed);
+
+                if (take.Count > 0)
+                {
+                    var out_of_box = TakenOut();
+                    foreach (var it in take)
+                    {
+                        out_of_box.TryGetValue(it.ThingId, out int had);
+                        out_of_box[it.ThingId] = had + it.Qty;
+                    }
+                    KeepTaken(out_of_box);
+
+                    Say("беру из хранилища: " + take.Count);
+                    foreach (var it in take)
+                        yield return Plugin.Instance.StartCoroutine(Act(it.Inv, BtnGetFromBox, WinByLocation, it.Tab, it.Qty));
+                    yield return Wait(0.25f);
+                    yield return Plugin.Instance.StartCoroutine(Scan(WinByLocation, 381));
+                    KeepStorage();
+                }
+                yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
+            }
+
+            var order = new List<int>(plan.Keys);
+            order.Sort();
+            var used = new HashSet<int>();
+            int on = 0, lost = 0;
+            foreach (int slot in order)
+            {
+                int thing = plan[slot];
+                int n;
+                if (!need.TryGetValue(thing, out n) || n <= 0) continue;
+                need[thing] = n - 1;
+                yield return Plugin.Instance.StartCoroutine(Put(thing, slot, used));
+                if (_put) { on++; Step("надеваю запасной набор: " + on); }
+                else lost++;
+            }
+
+            yield return Wait(0.2f);
+            yield return Plugin.Instance.StartCoroutine(ScanWear());
+            ManikinOn = true;
+            var notOn = new System.Text.StringBuilder();
+            foreach (var pair in plan)
+            {
+                bool onMe = false;
+                foreach (var w in Worn) if (w != null && w.ThingId == pair.Value) { onMe = true; break; }
+                if (!onMe) notOn.Append(Name(pair.Value)).Append(" (").Append(Manikin.SlotName(pair.Key)).Append("); ");
+            }
+            if (notOn.Length > 0)
+            {
+                var now = new System.Text.StringBuilder();
+                foreach (var w in Worn)
+                    if (w != null && w.ThingId > 0)
+                        now.Append(Manikin.SlotName(w.SlotId)).Append('=').Append(Name(w.ThingId)).Append("; ");
+                Plugin.Log?.LogWarning("[набор] осталось ненадетым: " + notOn);
+                Plugin.Log?.LogWarning("[набор] по итогу надето: " + now);
+            }
+            Say(lost > 0 ? "переоделся: надел " + on + ", не нашёл " + lost : "переоделся: надел " + on);
+        }
+
+        private static string Name(int thingId)
+        {
+            string name = Flasks.DisplayName(thingId);
+            return (string.IsNullOrEmpty(name) ? "вещь" : "«" + name + "»") + " " + thingId;
+        }
+
+        private static Dictionary<int, int> TakenOut()
+        {
+            var map = new Dictionary<int, int>();
+            string raw = Plugin.CfgManikinTaken != null ? Plugin.CfgManikinTaken.Value ?? "" : "";
+            foreach (var part in raw.Split(','))
+            {
+                var pair = part.Split(':');
+                if (pair.Length != 2) continue;
+                if (!int.TryParse(pair[0].Trim(), out int thing) || !int.TryParse(pair[1].Trim(), out int qty)) continue;
+                if (thing > 0 && qty > 0) map[thing] = qty;
+            }
+            return map;
+        }
+
+        private static void KeepTaken(Dictionary<int, int> map)
+        {
+            if (Plugin.CfgManikinTaken == null) return;
+            var text = new System.Text.StringBuilder();
+            foreach (var pair in map)
+            {
+                if (pair.Value <= 0) continue;
+                if (text.Length > 0) text.Append(',');
+                text.Append(pair.Key).Append(':').Append(pair.Value);
+            }
+            Plugin.CfgManikinTaken.Value = text.ToString();
+        }
+
+        private static IEnumerator ReturnTaken(List<Slot> memory)
+        {
+            var taken = TakenOut();
+            if (taken.Count == 0 || !AtStorage()) yield break;
+
+            var mine = new Dictionary<int, int>();
+            foreach (var m in memory)
+            {
+                if (m.SlotId != 0) continue;
+                mine.TryGetValue(m.ThingId, out int had);
+                mine[m.ThingId] = had + 1;
+            }
+
+            yield return Plugin.Instance.StartCoroutine(Scan(WinBox, 380));
+            var back = new List<Item>();
+            foreach (var it in Scanned)
+            {
+                if (!taken.TryGetValue(it.ThingId, out int left) || left <= 0) continue;
+                int spare = it.Qty;
+                if (mine.TryGetValue(it.ThingId, out int hold) && hold > 0)
+                {
+                    int stay = hold < spare ? hold : spare;
+                    mine[it.ThingId] = hold - stay;
+                    spare -= stay;
+                }
+                if (spare <= 0) continue;
+                int qty = spare < left ? spare : left;
+                taken[it.ThingId] = left - qty;
+                var copy = it;
+                copy.Qty = qty;
+                back.Add(copy);
+            }
+
+            if (back.Count > 0)
+            {
+                Say("возвращаю в хранилище: " + back.Count);
+                foreach (var it in back)
+                    yield return Plugin.Instance.StartCoroutine(Act(it.Inv, BtnPutToBox, WinBox, it.Tab, it.Qty));
+                yield return Wait(0.25f);
+                yield return Plugin.Instance.StartCoroutine(Scan(WinByLocation, 381));
+                KeepStorage();
+            }
+
+            KeepTaken(new Dictionary<int, int>());
+            yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
+        }
+
+        private static IEnumerator Put(int thing, int slot, HashSet<int> used)
+        {
+            _put = false;
+            for (int attempt = 0; attempt < 2 && !_put; attempt++)
+            {
+                var found = default(Item);
+                foreach (var it in Scanned)
+                    if (it.ThingId == thing && !used.Contains(it.Inv)) { found = it; break; }
+                if (found.Inv == 0)
+                {
+                    if (attempt > 0) break;
+                    yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
+                    used.Clear();
+                    continue;
+                }
+                yield return Plugin.Instance.StartCoroutine(
+                    Act(found.Inv, ExtraSlot(slot) ? BtnDressExtra : BtnDress, WinInventory, found.Tab, 1));
+                if (_lastOk) { used.Add(found.Inv); _put = true; break; }
+                yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
+                used.Clear();
+            }
+            if (!_put)
+                Plugin.Log?.LogWarning("[набор] не надел " + Name(thing) + " в слот " + slot + " (" + Manikin.SlotName(slot) + ")"
+                                       + (_lastErr.Length > 0 ? ": " + _lastErr : ": вещи нет в сумке"));
+        }
+
+        private static IEnumerator UndressManikin(List<Slot> memory)
+        {
+            _exact = false;
+            var plan = Manikin.Saved();
+            if (plan.Count == 0) yield break;
+            _exact = true;
+
+            var off = new List<InventoryWearResponseMessageItem>();
+            foreach (var w in Worn)
+            {
+                if (w == null || w.ThingId <= 0) continue;
+                bool keep = false;
+                foreach (var m in memory)
+                    if (m.SlotId == w.SlotId && m.ThingId == w.ThingId) { keep = true; break; }
+                if (!keep) off.Add(w);
+            }
+            if (off.Count == 0) yield break;
+
+            Say("снимаю запасной набор: " + off.Count);
+            foreach (var w in off)
+                yield return Plugin.Instance.StartCoroutine(
+                    Act(w.InventoryId, BtnTakeOff, WinInventory, 1, 1));
+            yield return Wait(0.2f);
+            yield return Plugin.Instance.StartCoroutine(ScanWear());
+            yield return Plugin.Instance.StartCoroutine(Scan(WinInventory, 380));
         }
 
         private static IEnumerator EnsureStorage()
@@ -281,6 +668,53 @@ namespace NewAgeQoL
                 while (t < 60f && Loc() != door) { yield return null; t += Time.unscaledDeltaTime; }
                 yield return Wait(0.6f);
             }
+        }
+
+        private static void KeepStorage()
+        {
+            var seen = new Dictionary<int, int>();
+            foreach (var it in Scanned)
+            {
+                if (it.ThingId <= 0 || it.Qty <= 0) continue;
+                int had;
+                seen.TryGetValue(it.ThingId, out had);
+                seen[it.ThingId] = had + it.Qty;
+            }
+            Storage.Remember(seen);
+            Plugin.Trace("[art] запомнил хранилище: видов вещей " + seen.Count);
+        }
+
+        internal static void RequestStorage()
+        {
+            if (Busy || Plugin.Instance == null || !NearStorage()) return;
+            Plugin.Instance.StartCoroutine(StorageRoutine());
+        }
+
+        private static IEnumerator StorageRoutine()
+        {
+            Busy = true;
+            try
+            {
+                yield return Plugin.Instance.StartCoroutine(Scan(WinByLocation, 381));
+                KeepStorage();
+            }
+            finally { Busy = false; }
+        }
+
+        internal static void RequestWear()
+        {
+            try
+            {
+                EnsureListeners();
+                Send(new InventoryWearRequest());
+            }
+            catch (System.Exception e) { Plugin.Trace("[art] запрос надетого: " + e.Message); }
+        }
+
+        internal static bool NearStorage()
+        {
+            try { return AtStorage(); }
+            catch { return false; }
         }
 
         private static bool AtStorage()
@@ -333,7 +767,7 @@ namespace NewAgeQoL
             foreach (int tab in tabs)
             {
                 Send(new GetTabContentRequest(tab, window));
-                yield return Wait(0.05f);
+                yield return null;
             }
 
             t = 0f;
@@ -366,20 +800,24 @@ namespace NewAgeQoL
             lock (Ctx)
             {
                 if (Ctx.TryGetValue(inv, out var r))
-                    Plugin.Trace("[art] кнопка " + button + " стак " + inv + " окно " + window + " вкладка " + tab
-                                        + " -> " + (r.Ok ? "ок" : "отказ: " + r.Err));
+                {
+                    _lastOk = r.Ok;
+                    _lastErr = r.Ok ? "" : (r.Err ?? "");
+                    if (r.Ok)
+                        Plugin.Trace("[art] кнопка " + button + " стак " + inv + " окно " + window + " вкладка " + tab + " -> ок");
+                    else
+                        Plugin.Log?.LogWarning("[art] кнопка " + button + " стак " + inv + " окно " + window + " вкладка " + tab
+                                               + " -> отказ: " + r.Err);
+                }
                 else
+                {
+                    _lastOk = false;
+                    _lastErr = "сервер не ответил";
                     Plugin.Log?.LogWarning("[art] кнопка " + button + " стак " + inv + " окно " + window + " вкладка " + tab
                                            + " -> сервер не ответил");
+                }
                 Ctx.Remove(inv);
             }
-            yield return Wait(0.12f);
-        }
-
-        private static int TabOf(int inv, int fallback)
-        {
-            foreach (var it in Scanned) if (it.Inv == inv) return it.Tab;
-            return fallback;
         }
 
         private static void EnsureListeners()
@@ -410,7 +848,11 @@ namespace NewAgeQoL
             {
                 if (th.Inventories == null) continue;
                 foreach (var ii in th.Inventories)
+                {
                     Add(new Item { Inv = ii.InventoryId, Tab = inv.TabNumber, ThingId = th.ThingId, Qty = ii.Quantity, Rarity = th.Rarity, Name = th.Name ?? "" });
+                    Flasks.NoteUse(th.ThingId, ii.CanUse ?? 0);
+                    Flasks.Note(th.ThingId, th.Image, th.SubType, th.Rarity, th.Level);
+                }
             }
         }
 
@@ -432,6 +874,9 @@ namespace NewAgeQoL
                     Rarity = it.ThingInfo.Rarity,
                     Name = it.ThingInfo.Name ?? "",
                 });
+                Flasks.NoteUse(it.ThingInfo.ThingId, it.CanUse);
+                Flasks.Note(it.ThingInfo.ThingId, it.ThingInfo.Image, it.ThingInfo.SubType,
+                            it.ThingInfo.Rarity, it.ThingInfo.Level.GetValueOrDefault());
             }
         }
 
@@ -516,7 +961,7 @@ namespace NewAgeQoL
             Status = text;
             StatusAt = Time.unscaledTime;
             Plugin.Trace("[art] " + text + " (loc=" + Loc() + ")");
-            try { AirMessageScript.ShowInformationNotification("Артефакты: " + text); } catch { }
+            try { AirMessageScript.ShowInformationNotification("Вещи: " + text); } catch { }
         }
 
         internal static void Step(string text)
